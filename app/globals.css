@@ -1,0 +1,104 @@
+/* ============================================================
+   Offshelf — global stylesheet
+   Order matters: tokens first (CSS vars), then Tailwind layers,
+   then the base reset/helpers ported from the prototype.
+   ============================================================ */
+@import "../styles/tokens.css";
+/* Primitive component classes (DESIGN §3) — token-only, theme-aware.
+   Imported before Tailwind's layers so utilities can still override. */
+@import "../styles/components.css";
+/* Storefront ("Counter" theme) layout helpers (DESIGN §5). */
+@import "../styles/storefront.css";
+/* Store builder — 3-panel section editor (DESIGN §4.9). */
+@import "../styles/builder.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Base / reset (DESIGN §2 · ported from prototype tokens.css)
+   ============================================================ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: var(--font-ui);
+    font-size: var(--text-base);
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    margin: 0;
+  }
+  button {
+    font-family: inherit;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--text-on-accent);
+  }
+
+  /* Focus-visible: 2px ring, 2px offset, everywhere (§3) */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Scrollbars — subtle, warm */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--warm-400);
+    background-clip: padding-box;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+@layer utilities {
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}

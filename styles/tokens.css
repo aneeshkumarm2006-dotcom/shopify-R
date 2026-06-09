@@ -1,0 +1,149 @@
+/* ============================================================
+   Offshelf — token layer (DESIGN §2 · ported from prototype tokens.css)
+   Names are the contract. Screens reference tokens, never hex.
+
+   NOTE: --font-ui / --font-mono / --font-display are injected by
+   next/font/local (see app/fonts.ts) onto <html>, so they are NOT
+   defined here — that keeps a single source of truth for the font stack.
+   ============================================================ */
+
+:root,
+[data-theme="light"] {
+  /* ---------- Raw ramps (§2.1) ---------- */
+  --warm-0: #ffffff;
+  --warm-50: #faf9f5;
+  --warm-100: #f4f2ec;
+  --warm-150: #eceae1;
+  --warm-200: #e3e0d6;
+  --warm-300: #cfcbbd;
+  --warm-400: #aba694;
+  --warm-500: #857f6c;
+  --warm-600: #69634f;
+  --warm-700: #4a4537;
+  --warm-800: #2c2920;
+  --warm-900: #16140e;
+
+  --lime-100: #f0f8ce;
+  --lime-200: #e2f2a0;
+  --lime-400: #c6f24e;
+  --lime-500: #b4e62f;
+  --lime-600: #97c518;
+
+  --green-600: #1f7a4d;
+  --green-100: #e4f4eb;
+  --amber-600: #b26b00;
+  --amber-100: #fbefd6;
+  --red-600: #c0392b;
+  --red-100: #fae6e3;
+  --blue-600: #2563a8;
+  --blue-100: #e5eef8;
+
+  /* ---------- Semantic aliases — LIGHT (§2.2) ---------- */
+  --bg: var(--warm-100);
+  --bg-store: var(--warm-50);
+  --surface: var(--warm-0);
+  --surface-subtle: var(--warm-50);
+  --surface-sunken: var(--warm-150);
+  --border: var(--warm-200);
+  --border-strong: var(--warm-300);
+  --text: var(--warm-800);
+  --text-strong: var(--warm-900);
+  --text-muted: var(--warm-500);
+  --text-on-accent: var(--warm-900);
+  --accent: var(--lime-400);
+  --accent-hover: var(--lime-500);
+  --accent-pressed: var(--lime-600);
+  --accent-tint: var(--lime-100);
+  --focus-ring: var(--lime-600);
+
+  --success: var(--green-600);
+  --success-bg: var(--green-100);
+  --warning: var(--amber-600);
+  --warning-bg: var(--amber-100);
+  --critical: var(--red-600);
+  --critical-bg: var(--red-100);
+  --info: var(--blue-600);
+  --info-bg: var(--blue-100);
+
+  /* ---------- Type scale (§2.3) ---------- */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 2.75rem;
+  --text-4xl: 4rem;
+
+  /* ---------- Spacing (§2.4) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* ---------- Radius ---------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --border-w: 1px;
+
+  /* ---------- Elevation ---------- */
+  --shadow-xs: 0 1px 2px rgba(20, 20, 14, 0.05);
+  --shadow-sm: 0 1px 3px rgba(20, 20, 14, 0.08), 0 1px 2px rgba(20, 20, 14, 0.04);
+  --shadow-md: 0 4px 12px rgba(20, 20, 14, 0.1);
+  --shadow-lg: 0 12px 32px rgba(20, 20, 14, 0.16);
+
+  /* ---------- Motion ---------- */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* ---------- Semantic aliases — DARK ---------- */
+[data-theme="dark"] {
+  --bg: #131210;
+  --bg-store: #131210;
+  --surface: #1c1b17;
+  --surface-subtle: #211f1a;
+  --surface-sunken: #100f0d;
+  --border: #34322b;
+  --border-strong: #494538;
+  --text: #e9e5d8;
+  --text-strong: #faf8f0;
+  --text-muted: #9a9583;
+  --text-on-accent: var(--warm-900);
+  --accent: var(--lime-400);
+  --accent-hover: var(--lime-500);
+  --accent-pressed: var(--lime-600);
+  --accent-tint: #2a3110;
+  --focus-ring: var(--lime-400);
+
+  --success: #4bbe82;
+  --success-bg: #16291f;
+  --warning: #e0a33e;
+  --warning-bg: #2e2410;
+  --critical: #e5705f;
+  --critical-bg: #2e1916;
+  --info: #5c9be0;
+  --info-bg: #14202e;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+}

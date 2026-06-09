@@ -1,0 +1,109 @@
+/* ============================================================
+   Offshelf — storefront ("Counter" theme) layout helpers (DESIGN §5)
+   Only the bits inline styles can't express: the centered content
+   container and the mobile-first responsive collapses. Everything
+   visual still resolves through the token layer.
+   ============================================================ */
+
+/* Centered content column shared by every storefront section/page. */
+.store-container {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding-left: var(--space-8);
+  padding-right: var(--space-8);
+  width: 100%;
+}
+
+/* Responsive section grids: collapse toward a single column on small screens.
+   Sections set `--cols` (desktop column count); these media queries step it down. */
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+@media (max-width: 900px) {
+  .store-grid {
+    grid-template-columns: repeat(min(var(--cols, 4), 3), minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .store-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+  .store-container {
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
+  }
+}
+
+/* 50/50 split that stacks on mobile (image_with_text, product detail, checkout). */
+.store-split {
+  display: grid;
+  gap: var(--space-12);
+  align-items: start;
+}
+.store-split-iwt {
+  grid-template-columns: 1fr 1fr;
+}
+.store-split-product {
+  grid-template-columns: 1.1fr 1fr;
+}
+.store-split-checkout {
+  grid-template-columns: 1.3fr 1fr;
+}
+
+@media (max-width: 860px) {
+  .store-split-iwt,
+  .store-split-product,
+  .store-split-checkout {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+  }
+  /* Image-with-text: image always leads when stacked, regardless of side toggle. */
+  .store-split-iwt > .store-iwt-text {
+    order: 2;
+  }
+  .store-split-iwt > .store-iwt-media {
+    order: 1;
+  }
+}
+
+/* Footer columns collapse from 4-up to 2-up to 1-up. */
+.store-footer-cols {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap: var(--space-8);
+}
+@media (max-width: 860px) {
+  .store-footer-cols {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+}
+@media (max-width: 520px) {
+  .store-footer-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Nav hides on small screens (mobile uses the always-present cart + logo).
+   A full hamburger menu is a Stage 4/8 enhancement; the links remain in the footer. */
+@media (max-width: 720px) {
+  .store-header-nav {
+    display: none !important;
+  }
+}
+
+/* Fluid display headings via clamp — set by sections through inline font-size too,
+   but this keeps section titles consistent. */
+.store-section-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.01em;
+  color: var(--warm-900);
+  line-height: 1.1;
+  margin: 0;
+}

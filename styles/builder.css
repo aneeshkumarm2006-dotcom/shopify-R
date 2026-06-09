@@ -1,0 +1,482 @@
+/* ============================================================
+   Store builder (Stage 4 · DESIGN §4.9)
+   The 3-panel section/block editor. Full-screen, chromeless.
+   Layout breakpoint: ≥1600px = 3 columns; below = settings
+   panel becomes a drag-resizable slide-up sheet.
+   ============================================================ */
+
+.bld {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* ---------------------------------------------------------- top bar ---- */
+.bld-topbar {
+  flex-shrink: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.bld-topbar-left,
+.bld-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bld-topbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+.bld-topbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+.bld-topbar-editing {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.bld-topbar-editing strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.bld-template-trigger {
+  gap: 8px;
+}
+.bld-template-trigger :first-child {
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------ segmented control ---- */
+.bld-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+}
+.bld-segment {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.bld-segment:hover {
+  color: var(--text-strong);
+}
+.bld-segment[data-active] {
+  background: var(--surface);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-xs);
+}
+.bld-device .bld-segment {
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+}
+
+/* --------------------------------------------------- save indicator ---- */
+.bld-savestate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 116px;
+  justify-content: flex-end;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.bld-savestate[data-state="dirty"] {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------- 3-panel body ---- */
+.bld-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.bld-panel {
+  flex-shrink: 0;
+  background: var(--surface);
+  overflow-y: auto;
+}
+.bld-panel-left {
+  width: 264px;
+  border-right: 1px solid var(--border);
+  padding: var(--space-3);
+}
+.bld-panel-right {
+  width: 320px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* center canvas */
+.bld-canvas {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-sunken);
+  overflow-y: auto;
+}
+.bld-canvas[data-device="tablet"],
+.bld-canvas[data-device="mobile"] {
+  display: grid;
+  place-items: start center;
+  padding: var(--space-8);
+}
+.bld-frame {
+  min-height: 100%;
+  position: relative;
+}
+.bld-frame[data-framed] {
+  min-height: auto;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--warm-50);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+.bld-canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+.bld-canvas-empty .btn {
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------- left: structure tree ---- */
+.bld-tree-group {
+  margin-bottom: var(--space-2);
+}
+.bld-tree-grouphead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.bld-tree-grouphead .eyebrow {
+  margin: 0;
+}
+.bld-tree-empty {
+  padding: 4px 10px 4px 24px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.bld-treenode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  position: relative;
+}
+.bld-treenode:hover {
+  background: var(--surface-subtle);
+}
+.bld-treenode[data-active] {
+  background: var(--accent-tint);
+}
+.bld-treenode[data-active]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent-pressed);
+}
+.bld-treenode[data-hidden] .bld-treenode-label {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.bld-treenode[data-dragging] {
+  opacity: 0.5;
+}
+.bld-treenode-drag {
+  display: inline-flex;
+  width: 16px;
+  color: var(--warm-300);
+  cursor: grab;
+}
+.bld-treenode-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.bld-treenode[data-active] .bld-treenode-icon {
+  color: var(--accent-pressed);
+}
+.bld-treenode-label {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: 450;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bld-treenode[data-active] .bld-treenode-label {
+  font-weight: 600;
+}
+.bld-treenode-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+}
+.bld-treenode:hover .bld-treenode-eye,
+.bld-treenode[data-hidden] .bld-treenode-eye {
+  opacity: 1;
+}
+.bld-treenode-eye:hover {
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+}
+.bld-add-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px 0 24px;
+  margin-top: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent-pressed);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.bld-add-section:hover {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------ right: settings form ---- */
+.bld-settings {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.bld-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--text-strong);
+}
+.bld-settings-head :first-child {
+  color: var(--text-muted);
+}
+.bld-settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.bld-settings-foot {
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.bld-settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-8) var(--space-6);
+  margin-top: 25%;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.bld-settings-empty :first-child {
+  opacity: 0.4;
+}
+
+/* ---------------------------------------------------- repeatable list ---- */
+.bld-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bld-list-empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+.bld-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.bld-list-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.bld-list-fields .input {
+  height: 32px;
+}
+.bld-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  border: none;
+  background: none;
+  color: var(--warm-300);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.bld-product-title {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bld-add-item {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------ add-section picker ---- */
+.bld-addgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.bld-addcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+}
+.bld-addcard:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-subtle);
+}
+.bld-addcard-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  flex-shrink: 0;
+}
+.bld-addcard-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+/* ------------------------------------- stacked sheet grip (hidden ≥1600) ---- */
+.bld-panel-grip {
+  display: none;
+}
+
+/* ============================================================
+   Stacked layout (<1600px): settings panel → slide-up sheet
+   ============================================================ */
+@media (max-width: 1599px) {
+  .bld-panel-right {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: var(--bld-sheet-h, 460px);
+    max-height: calc(100vh - 120px);
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(100%);
+    transition: transform 0.22s ease;
+    z-index: 30;
+  }
+  .bld-panel-right[data-open] {
+    transform: translateY(0);
+  }
+  .bld-panel-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    flex-shrink: 0;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .bld-panel-grip-bar {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+  }
+}
+
+/* Narrow screens: let the structure tree shrink. */
+@media (max-width: 900px) {
+  .bld-panel-left {
+    width: 220px;
+  }
+}

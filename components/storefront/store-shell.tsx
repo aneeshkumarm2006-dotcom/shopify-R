@@ -1,0 +1,100 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
+import type { Store } from "@/types";
+import { CartSheet } from "@/components/ui/cart-sheet";
+import { Icon } from "@/components/ui/icon";
+import { StorefrontProvider, useStorefront } from "./storefront-context";
+import { AgeGate } from "./age-gate";
+import { STORE_HOME } from "./shared";
+
+/**
+ * Storefront shell (DESIGN §5) — the client boundary the `(store)` layout wraps every
+ * storefront page in. It provides the session context (cart + age gate), renders the
+ * blocking age-gate interstitial, the global cart sheet, and a dev-only "back to
+ * admin" chip. Header/footer are rendered per page via the shared `StoreRenderer`
+ * (home/static) or the section components directly (product/collection/checkout/…),
+ * so the chrome stays consistent without living here.
+ */
+export function StoreShell({ store, children }: { store: Store; children: ReactNode }) {
+  return (
+    <StorefrontProvider
+      storeId={store._id}
+      storeName={store.name}
+      currency={store.settings.currency}
+      ageGateEnabled={store.ageGate.enabled}
+    >
+      <div style={{ minHeight: "100vh", background: "var(--warm-50)", color: "var(--text)" }}>
+        {children}
+      </div>
+      <AgeGate message={store.ageGate.message} minAge={store.ageGate.minAge} />
+      <GlobalCartSheet />
+      <BackToAdminChip />
+    </StorefrontProvider>
+  );
+}
+
+/** Cart sheet bound to the storefront context — opened from the header cart icon. */
+function GlobalCartSheet() {
+  const sf = useStorefront();
+  const router = useRouter();
+  if (!sf) return null;
+  return (
+    <CartSheet
+      open={sf.cartOpen}
+      onClose={sf.closeCart}
+      currency={sf.currency}
+      items={sf.cart.map((l) => ({
+        id: l.key,
+        title: l.title,
+        variant: l.variant,
+        price: l.price,
+        quantity: l.quantity,
+        image: l.image,
+      }))}
+      onQuantityChange={sf.setQuantity}
+      onRemove={sf.removeLine}
+      onCheckout={() => {
+        sf.closeCart();
+        router.push("/checkout");
+      }}
+      onContinue={() => {
+        sf.closeCart();
+        router.push(STORE_HOME);
+      }}
+    />
+  );
+}
+
+/**
+ * Dev-only affordance: jump back to the admin app from the customer storefront. Now
+ * that Stage 8 serves stores on their own subdomains, this is hidden in production —
+ * a live customer storefront never shows a link back into the platform admin.
+ */
+function BackToAdminChip() {
+  if (process.env.NODE_ENV === "production") return null;
+  return (
+    <a
+      href="/dashboard"
+      style={{
+        position: "fixed",
+        bottom: 16,
+        left: 16,
+        zIndex: 400,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "8px 13px",
+        borderRadius: 999,
+        background: "var(--warm-900)",
+        color: "var(--warm-50)",
+        fontSize: "var(--text-sm)",
+        boxShadow: "var(--shadow-md)",
+      }}
+    >
+      <Icon name="chevronLeft" size={15} aria-hidden />
+      Back to admin
+    </a>
+  );
+}
