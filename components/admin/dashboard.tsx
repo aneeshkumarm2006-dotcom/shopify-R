@@ -111,7 +111,7 @@ export function Dashboard({
             <Button
               variant="default"
               iconRight="external"
-              onClick={() => window.open("/", "_blank")}
+              onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
             >
               View store
             </Button>
@@ -217,7 +217,7 @@ export function Dashboard({
             variant="default"
             size="sm"
             iconRight="external"
-            onClick={() => window.open("/", "_blank")}
+            onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
           >
             View store
           </Button>

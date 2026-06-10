@@ -31,7 +31,7 @@ export function StoreLogo({
         }}
       >
         <Icon
-          name="leaf"
+          name="store"
           size={15}
           style={{ color: dark ? "var(--warm-900)" : "var(--lime-400)" }}
           aria-hidden

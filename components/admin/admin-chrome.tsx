@@ -111,7 +111,7 @@ function ShellWithPalette(props: AdminChromeProps) {
         group: "Actions",
         icon: "external",
         label: "View storefront",
-        onRun: () => window.open("/", "_blank"),
+        onRun: () => window.open(`https://${storeDomain(store.subdomain)}`, "_blank"),
       },
     ];
     const nav: Command[] = NAV.map((n) => ({
@@ -309,7 +309,7 @@ function Topbar({ store, owner }: { store: Store; owner: User }) {
         size={36}
         tip="View store"
         aria-label="View store"
-        onClick={() => window.open("/", "_blank")}
+        onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
       />
       <IconButton
         name={theme === "dark" ? "sun" : "moon"}

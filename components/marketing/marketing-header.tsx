@@ -28,7 +28,7 @@ export function MarketingHeader() {
       <div className="mx-auto flex h-16 max-w-[1120px] items-center justify-between gap-4 px-6">
         <Link href="/" className="flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-text-on-accent">
-            <Icon name="leaf" size={16} aria-hidden />
+            <Icon name="store" size={16} aria-hidden />
           </span>
           <span className="font-display text-lg text-text-strong">Offshelf</span>
         </Link>
