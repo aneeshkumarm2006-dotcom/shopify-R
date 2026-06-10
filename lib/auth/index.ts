@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
 import { redirect, notFound } from "next/navigation";
 import { getStore } from "@/lib/data/store";
@@ -94,7 +94,7 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
   if (!isAuthConfigured()) {
     return { storeId: MOCK_STORE_ID, ready: true }; // Part A / mock fallback
   }
-  let session: Awaited<ReturnType<typeof auth>>;
+  let session: Session | null;
   try {
     session = await auth();
   } catch {
@@ -129,7 +129,7 @@ export async function requireMerchantStoreId(): Promise<string> {
  */
 export async function requireSession(): Promise<void> {
   if (!isAuthConfigured()) return;
-  let session: Awaited<ReturnType<typeof auth>>;
+  let session: Session | null;
   try {
     session = await auth();
   } catch {
@@ -148,7 +148,7 @@ export async function requireSession(): Promise<void> {
  */
 export async function requirePlatformAdmin(): Promise<void> {
   if (!isAuthConfigured()) return;
-  let session: Awaited<ReturnType<typeof auth>>;
+  let session: Session | null;
   try {
     session = await auth();
   } catch {
