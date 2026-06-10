@@ -201,7 +201,7 @@ function Sidebar({
             <Link
               key={n.href}
               href={n.href}
-              className={`admin-nav-item${active ? "active" : ""}`}
+              className={`admin-nav-item${active ? " active" : ""}`}
               aria-current={active ? "page" : undefined}
             >
               <span className="nav-icon">
