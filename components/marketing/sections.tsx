@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { HeroPeek } from "@/components/marketing/hero-peek";
 
 /**
  * Offshelf marketing landing sections (Stage 5). Token-driven, fully responsive,
@@ -89,60 +90,8 @@ export function Hero() {
           </p>
         </div>
 
-        {/* Browser-frame product peek */}
-        <div className="mx-auto mt-16 max-w-[920px]">
-          <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
-            <div className="flex items-center gap-2 border-b border-border bg-surface-subtle px-4 py-3">
-              <span className="h-3 w-3 rounded-full bg-border-strong" />
-              <span className="h-3 w-3 rounded-full bg-border-strong" />
-              <span className="h-3 w-3 rounded-full bg-border-strong" />
-              <span className="mono ml-3 truncate text-xs text-text-muted">
-                yourstore.offshelf.app
-              </span>
-            </div>
-            <div className="grid gap-px bg-border sm:grid-cols-[180px_1fr]">
-              {/* faux admin sidebar */}
-              <div className="hidden flex-col gap-1 bg-surface p-4 sm:flex">
-                {(
-                  [
-                    ["home", "Home"],
-                    ["orders", "Orders"],
-                    ["products", "Products"],
-                    ["inventory", "Inventory"],
-                    ["customers", "Customers"],
-                    ["store", "Online Store"],
-                  ] as [IconName, string][]
-                ).map(([icon, label], i) => (
-                  <span
-                    key={label}
-                    className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm ${
-                      i === 5 ? "bg-accent-tint text-text-strong" : "text-text-muted"
-                    }`}
-                  >
-                    <Icon name={icon} size={16} aria-hidden /> {label}
-                  </span>
-                ))}
-              </div>
-              {/* faux storefront preview */}
-              <div className="bg-bg-store p-6">
-                <div className="rounded-lg border border-border bg-surface p-6">
-                  <div className="h-3 w-24 rounded-full bg-accent" />
-                  <div className="mt-3 h-7 w-3/4 rounded-md bg-surface-sunken" />
-                  <div className="mt-2 h-7 w-1/2 rounded-md bg-surface-sunken" />
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    {[0, 1, 2].map((i) => (
-                      <div key={i} className="rounded-md border border-border p-2">
-                        <div className="aspect-square rounded bg-surface-sunken" />
-                        <div className="mt-2 h-2.5 w-full rounded-full bg-surface-sunken" />
-                        <div className="mono mt-1.5 h-2.5 w-10 rounded-full bg-accent-tint" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Interactive browser-frame product peek */}
+        <HeroPeek />
       </div>
     </section>
   );
