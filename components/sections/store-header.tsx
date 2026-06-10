@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import type { Section } from "@/types";
 import { StoreLogo } from "@/components/storefront/store-logo";
-import { useStorefront } from "@/components/storefront/storefront-context";
+import { useStorefront, useStoreHref } from "@/components/storefront/storefront-context";
 import { STORE_HOME } from "@/components/storefront/shared";
 
 interface NavItem {
@@ -35,6 +35,7 @@ export function StoreHeader({
 }) {
   const s = section.settings as HeaderSettings;
   const sf = useStorefront();
+  const href = useStoreHref();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -104,7 +105,7 @@ export function StoreHeader({
             ) : (
               <Link
                 key={item.label}
-                href={item.href}
+                href={href(item.href)}
                 style={{ fontWeight: 450, color: "inherit" }}
               >
                 {item.label}
@@ -158,10 +159,11 @@ export function StoreHeader({
 }
 
 function LogoLink({ preview, name }: { preview: boolean; name?: string }) {
+  const href = useStoreHref();
   const logo = <StoreLogo name={name} />;
   if (preview) return logo;
   return (
-    <Link href={STORE_HOME} aria-label="Store home">
+    <Link href={href(STORE_HOME)} aria-label="Store home">
       {logo}
     </Link>
   );

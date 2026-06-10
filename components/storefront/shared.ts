@@ -4,13 +4,24 @@ import type { Product, Variant } from "@/types";
  * Storefront ("Counter" theme) shared helpers — small, presentational utilities
  * used across the section components and composite page views (DESIGN §5).
  *
- * Stage 8 serves each store on its own subdomain: `middleware.ts` rewrites a live
- * store's `/` into the `(store)` group's internal `/preview` home, so the customer's
- * home URL is a clean `/`. `STORE_HOME` is that public home path; storefront links use
- * it. (To exercise the storefront in dev, visit `<store>.localhost:3000`; a bare
- * `localhost:3000/` is the marketing apex, with the demo home still at `/preview`.)
+ * Stores are served under a `/s/<subdomain>` path prefix (see `middleware.ts`), so
+ * every customer-facing link is built relative to that base. `STORE_HOME` is the
+ * store-relative home path; `withBase` prepends the current store's base prefix to a
+ * store-relative path. Components read the base from the storefront context via
+ * `useStoreHref()` (null base in the builder preview → links resolve unprefixed, which
+ * is fine since preview links are inert).
  */
 export const STORE_HOME = "/";
+
+/**
+ * Prefix a store-relative path with the tenant base (e.g. `/s/northbound`). External
+ * or non-rooted hrefs (anything not starting with `/`) pass through untouched, so a
+ * merchant-configured `https://…` nav link still works.
+ */
+export function withBase(base: string | undefined, href: string): string {
+  if (!base || !href.startsWith("/")) return href;
+  return href === "/" ? base : `${base}${href}`;
+}
 
 /** Per-variant stock state, mirroring the admin inventory roll-up (DESIGN §5.4). */
 export type StockState = "in_stock" | "low" | "out";

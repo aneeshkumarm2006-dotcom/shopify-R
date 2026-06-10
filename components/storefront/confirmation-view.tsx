@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Icon } from "@/components/ui/icon";
 import { money } from "@/lib/format";
 import { STORE_HOME } from "./shared";
+import { useStoreHref } from "./storefront-context";
 import { readOrder, type PlacedOrder } from "./order-handoff";
 
 /**
@@ -13,6 +14,7 @@ import { readOrder, type PlacedOrder } from "./order-handoff";
  * in MVP). Reads the Part A handoff stashed at checkout; Stage 10 reads the real order.
  */
 export function ConfirmationView() {
+  const href = useStoreHref();
   const [order, setOrder] = useState<PlacedOrder | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -126,7 +128,7 @@ export function ConfirmationView() {
       </div>
 
       <Link
-        href={STORE_HOME}
+        href={href(STORE_HOME)}
         className="btn btn-lg btn-pill"
         style={{ marginTop: 28, background: "var(--warm-900)", color: "var(--warm-50)" }}
       >

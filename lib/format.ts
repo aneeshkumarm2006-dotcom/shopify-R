@@ -6,19 +6,39 @@
  * (PRD §6.1 / store.settings.currency).
  */
 
-/** App apex domain — reads NEXT_PUBLIC_APP_DOMAIN so dev (localhost) and prod are consistent. */
-export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN || "offshelf.app";
+/** App apex domain — reads NEXT_PUBLIC_APP_DOMAIN so dev and prod stay consistent. */
+export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN || "ourapp.com";
 
-/** A store's public address, e.g. `northbound.ourapp.com`. */
-export function storeDomain(subdomain: string): string {
-  return `${subdomain}.${APP_DOMAIN}`;
+/**
+ * Stores are namespaced by PATH, not subdomain: `<app>/s/<subdomain>`. This works on a
+ * single host (e.g. a `*.vercel.app` deployment) where wildcard subdomains aren't
+ * available. `middleware.ts` rewrites `/s/<subdomain>/...` to the internal `(store)`
+ * routes and stamps the resolved tenant for `resolveStorefront()`.
+ */
+export function storePath(subdomain: string): string {
+  return `/s/${subdomain}`;
 }
 
-/** Full origin for a store's public site, using http for localhost and https otherwise. */
+/**
+ * A store's public address for DISPLAY, e.g. `myshop.vercel.app/s/northbound`. Uses
+ * `APP_DOMAIN` (not `window`) so server and client render identically (no hydration
+ * drift) — set `NEXT_PUBLIC_APP_DOMAIN` to your deployment host for an accurate label.
+ */
+export function storeDomain(subdomain: string): string {
+  return `${APP_DOMAIN}${storePath(subdomain)}`;
+}
+
+/**
+ * Absolute URL to a store's public site — what "View store" opens. In the browser it
+ * uses the current origin (so it's correct on any deployment host); on the server it
+ * falls back to `APP_DOMAIN` over https.
+ */
 export function storeOrigin(subdomain: string): string {
-  const domain = storeDomain(subdomain);
-  const proto = domain.includes("localhost") ? "http" : "https";
-  return `${proto}://${domain}`;
+  const origin =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : `https://${APP_DOMAIN}`;
+  return `${origin}${storePath(subdomain)}`;
 }
 
 /** `$1,234.00` — two-decimal money with a leading currency symbol. */

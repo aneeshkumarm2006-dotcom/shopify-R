@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { money } from "@/lib/format";
 import { submitOrder } from "@/app/(store)/actions";
-import { useStorefront } from "./storefront-context";
+import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 import { stashOrder } from "./order-handoff";
 
@@ -26,6 +26,7 @@ import { stashOrder } from "./order-handoff";
 export function CheckoutView() {
   const sf = useStorefront();
   const router = useRouter();
+  const href = useStoreHref();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -52,7 +53,7 @@ export function CheckoutView() {
           title="Your cart is empty"
           body="Add something before checking out."
           action={
-            <Link href={STORE_HOME}>
+            <Link href={href(STORE_HOME)}>
               <Button variant="default">Continue shopping</Button>
             </Link>
           }
@@ -100,7 +101,7 @@ export function CheckoutView() {
         items,
       });
       sf.clearCart();
-      router.push("/order-confirmation");
+      router.push(href("/order-confirmation"));
     });
   };
 
@@ -110,7 +111,7 @@ export function CheckoutView() {
       style={{ maxWidth: 1000, paddingTop: "var(--space-10)", paddingBottom: "var(--space-12)" }}
     >
       <Link
-        href={STORE_HOME}
+        href={href(STORE_HOME)}
         className="btn btn-sm btn-ghost"
         style={{ marginBottom: 20, paddingLeft: 4, color: "var(--warm-600)" }}
       >

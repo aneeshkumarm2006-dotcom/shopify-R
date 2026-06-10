@@ -7,7 +7,7 @@ import { Stepper } from "@/components/ui/stepper";
 import { Media } from "@/components/sections/media";
 import type { Product } from "@/types";
 import { money } from "@/lib/format";
-import { useStorefront } from "./storefront-context";
+import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 import { variantStock, productType } from "./shared";
 
@@ -20,6 +20,7 @@ import { variantStock, productType } from "./shared";
  */
 export function ProductView({ product, currency = "$" }: { product: Product; currency?: string }) {
   const sf = useStorefront();
+  const href = useStoreHref();
   const [vi, setVi] = useState(() =>
     Math.max(0, product.variants.findIndex((v) => variantStock(v) !== "out")),
   );
@@ -44,7 +45,7 @@ export function ProductView({ product, currency = "$" }: { product: Product; cur
   return (
     <div className="store-container" style={{ paddingTop: "var(--space-10)", paddingBottom: "var(--space-10)" }}>
       <Link
-        href={STORE_HOME}
+        href={href(STORE_HOME)}
         className="btn btn-sm btn-ghost"
         style={{ marginBottom: 24, paddingLeft: 4, color: "var(--warm-600)" }}
       >

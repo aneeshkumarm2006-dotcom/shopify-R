@@ -8,7 +8,7 @@ import { Media } from "@/components/sections/media";
 import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { money } from "@/lib/format";
-import { useStorefront } from "./storefront-context";
+import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 
 /**
@@ -20,6 +20,7 @@ import { STORE_HOME } from "./shared";
 export function CartPage() {
   const sf = useStorefront();
   const router = useRouter();
+  const href = useStoreHref();
   if (!sf) return null;
   const { cart, subtotal, currency } = sf;
 
@@ -43,7 +44,7 @@ export function CartPage() {
           title="Your cart is empty"
           body="Browse the shop and add something you like."
           action={
-            <Link href={STORE_HOME}>
+            <Link href={href(STORE_HOME)}>
               <Button variant="default">Continue shopping</Button>
             </Link>
           }
@@ -68,7 +69,7 @@ export function CartPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                     <Link
-                      href={`/products/${l.handle}`}
+                      href={href(`/products/${l.handle}`)}
                       style={{ fontWeight: 500, fontSize: "var(--text-md)", color: "var(--text-strong)" }}
                     >
                       {l.title}
@@ -126,11 +127,11 @@ export function CartPage() {
             <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", margin: "0 0 16px" }}>
               Shipping calculated at checkout.
             </p>
-            <Button variant="primary" size="lg" pill block onClick={() => router.push("/checkout")}>
+            <Button variant="primary" size="lg" pill block onClick={() => router.push(href("/checkout"))}>
               Checkout
             </Button>
             <Link
-              href={STORE_HOME}
+              href={href(STORE_HOME)}
               style={{
                 display: "block",
                 textAlign: "center",

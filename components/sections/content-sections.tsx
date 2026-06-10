@@ -8,6 +8,7 @@ import { Media } from "./media";
 import { ProductCard } from "./product-card";
 import { EmptyState } from "@/components/ui/states";
 import { sanitizeHtmlFragment } from "@/lib/sanitize/inject";
+import { useStoreHref } from "@/components/storefront/storefront-context";
 
 /**
  * The closed MVP section set (DESIGN §5.3) — `hero`, `featured_products`,
@@ -253,9 +254,9 @@ export function CollectionListSection({ section, preview }: SectionProps) {
             return preview || !c.handle ? (
               <div key={i}>{tile}</div>
             ) : (
-              <Link key={i} href={`/collections/${c.handle}`} style={{ display: "block" }}>
+              <CollectionTile key={i} handle={c.handle}>
                 {tile}
-              </Link>
+              </CollectionTile>
             );
           })}
         </div>
@@ -476,6 +477,15 @@ export function CustomHtmlSection({ section }: SectionProps) {
 }
 
 /* --------------------------------------------------------------- util ---- */
+function CollectionTile({ handle, children }: { handle: string; children: React.ReactNode }) {
+  const href = useStoreHref();
+  return (
+    <Link href={href(`/collections/${handle}`)} style={{ display: "block" }}>
+      {children}
+    </Link>
+  );
+}
+
 function CtaButton({
   href,
   children,
@@ -487,6 +497,7 @@ function CtaButton({
   primary?: boolean;
   preview?: boolean;
 }) {
+  const toHref = useStoreHref();
   const className = "btn btn-lg btn-pill";
   const style: React.CSSProperties = primary
     ? { background: "var(--lime-400)", color: "var(--warm-900)", fontWeight: 600 }
@@ -505,7 +516,7 @@ function CtaButton({
     );
   }
   return (
-    <Link href={href} className={className} style={style}>
+    <Link href={toHref(href)} className={className} style={style}>
       {content}
     </Link>
   );

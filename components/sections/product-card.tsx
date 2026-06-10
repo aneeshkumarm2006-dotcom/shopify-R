@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Media } from "./media";
 import type { Product } from "@/types";
 import { money } from "@/lib/format";
-import { useStorefront } from "@/components/storefront/storefront-context";
+import { useStorefront, useStoreHref } from "@/components/storefront/storefront-context";
 import {
   defaultVariant,
   fromPrice,
@@ -29,6 +29,7 @@ export function ProductCard({
   preview?: boolean;
 }) {
   const sf = useStorefront();
+  const href = useStoreHref();
   const onSale = saleVariant(product);
   const soldOut = !productInStock(product);
   const price = fromPrice(product);
@@ -106,7 +107,7 @@ export function ProductCard({
 
   if (preview) return <div style={style}>{card}</div>;
   return (
-    <Link href={`/products/${product.handle}`} style={style}>
+    <Link href={href(`/products/${product.handle}`)} style={style}>
       {card}
     </Link>
   );

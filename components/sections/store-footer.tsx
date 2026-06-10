@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import type { Section } from "@/types";
 import { StoreLogo } from "@/components/storefront/store-logo";
+import { useStoreHref } from "@/components/storefront/storefront-context";
 
 interface FooterColumn {
   title: string;
@@ -28,12 +31,13 @@ export function StoreFooter({
 }) {
   const s = section.settings as FooterSettings;
   const columns = s.columns ?? [];
+  const href = useStoreHref();
 
-  const LinkEl = ({ href, children }: { href: string; children: string }) =>
+  const LinkEl = ({ href: to, children }: { href: string; children: string }) =>
     preview ? (
       <span style={{ fontSize: "var(--text-base)", color: "var(--warm-600)" }}>{children}</span>
     ) : (
-      <Link href={href} style={{ fontSize: "var(--text-base)", color: "var(--warm-600)" }}>
+      <Link href={href(to)} style={{ fontSize: "var(--text-base)", color: "var(--warm-600)" }}>
         {children}
       </Link>
     );

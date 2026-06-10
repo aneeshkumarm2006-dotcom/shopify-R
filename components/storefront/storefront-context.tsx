@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { Product, Variant } from "@/types";
 import { syncCart } from "@/app/(store)/actions";
-import { lineKey } from "./shared";
+import { lineKey, withBase } from "./shared";
 
 /**
  * Storefront client state (DESIGN §5) — the single source of truth for the
@@ -59,6 +59,9 @@ interface StorefrontValue {
   // --- store chrome ---
   currency: string;
   storeName: string;
+  // --- routing ---
+  /** Tenant path prefix for customer links, e.g. `/s/northbound` (see middleware). */
+  basePath: string;
 }
 
 const StorefrontContext = createContext<StorefrontValue | null>(null);
@@ -67,6 +70,16 @@ const StorefrontContext = createContext<StorefrontValue | null>(null);
  *  builder preview in Stage 4), so consumers can render a non-interactive variant. */
 export function useStorefront(): StorefrontValue | null {
   return useContext(StorefrontContext);
+}
+
+/**
+ * Returns a function that turns a store-relative path (`/products/x`, `/`) into a
+ * tenant-prefixed href (`/s/northbound/products/x`). Outside a provider the base is
+ * empty, so paths pass through unchanged.
+ */
+export function useStoreHref(): (href: string) => string {
+  const base = useContext(StorefrontContext)?.basePath ?? "";
+  return useCallback((href: string) => withBase(base, href), [base]);
 }
 
 const AGE_COOKIE = "offshelf_age_verified";
@@ -123,12 +136,14 @@ export function StorefrontProvider({
   storeName,
   currency = "$",
   ageGateEnabled = true,
+  basePath = "",
   children,
 }: {
   storeId: string;
   storeName: string;
   currency?: string;
   ageGateEnabled?: boolean;
+  basePath?: string;
   children: ReactNode;
 }) {
   // Mounted gate avoids SSR/CSR mismatch: server renders unverified + empty cart,
@@ -243,6 +258,7 @@ export function StorefrontProvider({
       sessionId,
       currency,
       storeName,
+      basePath,
     };
   }, [
     ageGateEnabled,
@@ -257,6 +273,7 @@ export function StorefrontProvider({
     sessionId,
     currency,
     storeName,
+    basePath,
   ]);
 
   return (

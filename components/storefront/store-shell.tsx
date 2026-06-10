@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 import type { Store } from "@/types";
 import { CartSheet } from "@/components/ui/cart-sheet";
 import { Icon } from "@/components/ui/icon";
-import { StorefrontProvider, useStorefront } from "./storefront-context";
+import { storePath } from "@/lib/format";
+import { StorefrontProvider, useStorefront, useStoreHref } from "./storefront-context";
 import { AgeGate } from "./age-gate";
 import { STORE_HOME } from "./shared";
 
@@ -24,6 +25,7 @@ export function StoreShell({ store, children }: { store: Store; children: ReactN
       storeName={store.name}
       currency={store.settings.currency}
       ageGateEnabled={store.ageGate.enabled}
+      basePath={storePath(store.subdomain)}
     >
       <div style={{ minHeight: "100vh", background: "var(--warm-50)", color: "var(--text)" }}>
         {children}
@@ -39,6 +41,7 @@ export function StoreShell({ store, children }: { store: Store; children: ReactN
 function GlobalCartSheet() {
   const sf = useStorefront();
   const router = useRouter();
+  const href = useStoreHref();
   if (!sf) return null;
   return (
     <CartSheet
@@ -57,11 +60,11 @@ function GlobalCartSheet() {
       onRemove={sf.removeLine}
       onCheckout={() => {
         sf.closeCart();
-        router.push("/checkout");
+        router.push(href("/checkout"));
       }}
       onContinue={() => {
         sf.closeCart();
-        router.push(STORE_HOME);
+        router.push(href(STORE_HOME));
       }}
     />
   );
