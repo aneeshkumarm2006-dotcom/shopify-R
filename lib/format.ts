@@ -6,12 +6,19 @@
  * (PRD §6.1 / store.settings.currency).
  */
 
-/** App apex domain — placeholder until the real domain is confirmed (TODO open decision). */
-export const APP_DOMAIN = "offshelf.app";
+/** App apex domain — reads NEXT_PUBLIC_APP_DOMAIN so dev (localhost) and prod are consistent. */
+export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN || "offshelf.app";
 
-/** A store's public address, e.g. `northbound.offshelf.app`. */
+/** A store's public address, e.g. `northbound.ourapp.com`. */
 export function storeDomain(subdomain: string): string {
   return `${subdomain}.${APP_DOMAIN}`;
+}
+
+/** Full origin for a store's public site, using http for localhost and https otherwise. */
+export function storeOrigin(subdomain: string): string {
+  const domain = storeDomain(subdomain);
+  const proto = domain.includes("localhost") ? "http" : "https";
+  return `${proto}://${domain}`;
 }
 
 /** `$1,234.00` — two-decimal money with a leading currency symbol. */

@@ -16,10 +16,10 @@ import {
   ViewTabs,
   useToast,
 } from "@/components/ui";
-import { paymentPill, storeStatusPill } from "@/components/admin/shared";
+import { paymentPill } from "@/components/admin/shared";
 import { PublishDialog } from "@/components/admin/publish-dialog";
 import { publishStoreAction } from "@/app/(admin)/publish/actions";
-import { money, storeDomain } from "@/lib/format";
+import { money, storeDomain, storeOrigin } from "@/lib/format";
 
 /**
  * Dashboard / Home (DESIGN §4.4) — minimal analytics per PRD §6.9. A publish nudge
@@ -81,8 +81,6 @@ export function Dashboard({
   const [pending, startTransition] = useTransition();
   const toast = useToast();
   const router = useRouter();
-  const pill = storeStatusPill(status);
-
   function confirmPublish() {
     startTransition(async () => {
       const res = await publishStoreAction();
@@ -101,21 +99,12 @@ export function Dashboard({
     <div>
       <PageHeader
         title="Home"
-        pill={<Pill tone={pill.tone}>{pill.label}</Pill>}
         actions={
           status === "draft" ? (
             <Button variant="primary" icon="sparkle" onClick={() => setPublishOpen(true)}>
               Publish store
             </Button>
-          ) : (
-            <Button
-              variant="default"
-              iconRight="external"
-              onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
-            >
-              View store
-            </Button>
-          )
+          ) : undefined
         }
       />
 
@@ -217,7 +206,7 @@ export function Dashboard({
             variant="default"
             size="sm"
             iconRight="external"
-            onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
+            onClick={() => window.open(storeOrigin(store.subdomain), "_blank")}
           >
             View store
           </Button>

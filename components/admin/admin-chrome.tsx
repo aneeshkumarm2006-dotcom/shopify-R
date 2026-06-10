@@ -23,7 +23,7 @@ import {
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
 import { doSignOut } from "@/lib/auth/actions";
-import { storeDomain } from "@/lib/format";
+import { storeDomain, storeOrigin } from "@/lib/format";
 
 /**
  * Admin app shell (DESIGN §4.1) — 240px sidebar + 56px topbar + ⌘K palette, with
@@ -111,7 +111,7 @@ function ShellWithPalette(props: AdminChromeProps) {
         group: "Actions",
         icon: "external",
         label: "View storefront",
-        onRun: () => window.open(`https://${storeDomain(store.subdomain)}`, "_blank"),
+        onRun: () => window.open(storeOrigin(store.subdomain), "_blank"),
       },
     ];
     const nav: Command[] = NAV.map((n) => ({
@@ -189,7 +189,7 @@ function Sidebar({
     <aside className="admin-sidebar">
       <div className="admin-brand">
         <span className="admin-brand-mark" aria-hidden="true">
-          <span />
+          <Icon name="store" size={13} style={{ color: "var(--accent)" }} />
         </span>
         <span className="admin-brand-word">Offshelf</span>
       </div>
@@ -309,7 +309,7 @@ function Topbar({ store, owner }: { store: Store; owner: User }) {
         size={36}
         tip="View store"
         aria-label="View store"
-        onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
+        onClick={() => window.open(storeOrigin(store.subdomain), "_blank")}
       />
       <IconButton
         name={theme === "dark" ? "sun" : "moon"}

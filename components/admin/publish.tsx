@@ -16,7 +16,7 @@ import {
 import { storeStatusPill } from "@/components/admin/shared";
 import { PublishDialog } from "@/components/admin/publish-dialog";
 import { publishStoreAction, unpublishStoreAction } from "@/app/(admin)/publish/actions";
-import { storeDomain } from "@/lib/format";
+import { storeDomain, storeOrigin } from "@/lib/format";
 
 /**
  * Publish flow screen (DESIGN §4.11). A validation checklist (subdomain required,
@@ -100,7 +100,7 @@ export function Publish({
               <Button
                 variant="default"
                 iconRight="external"
-                onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
+                onClick={() => window.open(storeOrigin(store.subdomain), "_blank")}
               >
                 View store
               </Button>
@@ -250,7 +250,7 @@ export function Publish({
               variant="default"
               size="sm"
               iconRight="external"
-              onClick={() => window.open(`https://${storeDomain(store.subdomain)}`, "_blank")}
+              onClick={() => window.open(storeOrigin(store.subdomain), "_blank")}
             >
               Preview storefront
             </Button>
