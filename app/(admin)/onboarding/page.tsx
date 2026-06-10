@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { isAuthConfigured, getMerchantContext } from "@/lib/auth";
 import { Onboarding } from "@/components/admin/onboarding";
 
-export const metadata: Metadata = { title: "Claim your address" };
+export const metadata: Metadata = { title: "Set up your store" };
 
 export default async function OnboardingPage() {
   // Onboarding requires a session but NOT a claimed subdomain (that's the whole

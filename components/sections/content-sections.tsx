@@ -30,6 +30,7 @@ export interface SectionProps {
 /* ---------------------------------------------------------------- hero ---- */
 export function HeroSection({ section, preview }: SectionProps) {
   const s = section.settings as {
+    badge?: string;
     heading?: string;
     subtext?: string;
     cta?: string;
@@ -89,24 +90,26 @@ export function HeroSection({ section, preview }: SectionProps) {
       )}
       <div className="store-container" style={{ position: "relative" }}>
         <div style={{ maxWidth: 560, marginInline: center ? "auto" : undefined, textAlign: center ? "center" : "left" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "5px 12px",
-              borderRadius: 999,
-              border: "1px solid rgba(198,242,78,0.3)",
-              color: "var(--lime-400)",
-              fontSize: "var(--text-sm)",
-              marginBottom: 22,
-              fontWeight: 500,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--lime-400)" }} />
-            Oregon · 21+
-          </span>
+          {s.badge && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "5px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(198,242,78,0.3)",
+                color: "var(--lime-400)",
+                fontSize: "var(--text-sm)",
+                marginBottom: 22,
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--lime-400)" }} />
+              {s.badge}
+            </span>
+          )}
           <h1
             style={{
               fontFamily: "var(--font-display)",

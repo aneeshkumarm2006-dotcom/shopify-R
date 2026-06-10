@@ -87,6 +87,11 @@ function renderFields(
     case "hero":
       return (
         <>
+          <Field label="Badge" help="Small pill above the heading, e.g. “Lab tested · 21+”. Leave empty to hide.">
+            {(p) => (
+              <Input {...p} value={str("badge")} onChange={(e) => set("badge", e.target.value)} />
+            )}
+          </Field>
           <Field label="Heading">
             {(p) => (
               <Textarea

@@ -7,6 +7,12 @@ import {
   RESERVED_SUBDOMAINS,
   type SubdomainCheck,
 } from "@/lib/data/subdomain";
+import {
+  buildTemplateConfig,
+  isStoreTemplateId,
+  type StoreTemplateId,
+} from "@/lib/data/store-templates";
+import { saveThemeConfig } from "@/lib/data/theme";
 import { auth, signIn, signOut, isAuthConfigured } from "./index";
 
 /**
@@ -66,12 +72,17 @@ export interface ClaimResult {
 }
 
 /**
- * Persist the claimed subdomain to the signed-in merchant's store (PRD §7.1).
- * Re-validates server-side (never trust the client), then writes — catching the
- * unique-index race so a near-simultaneous claim surfaces as `taken` rather than
- * a 500. In stub mode it no-ops and reports success so the demo flow continues.
+ * Persist the claimed subdomain to the signed-in merchant's store (PRD §7.1),
+ * then seed the store's themeConfig from the chosen starter template. Both
+ * inputs are re-validated server-side (never trust the client); the subdomain
+ * write catches the unique-index race so a near-simultaneous claim surfaces as
+ * `taken` rather than a 500. In stub mode it no-ops and reports success so the
+ * demo flow continues.
  */
-export async function claimSubdomain(raw: string): Promise<ClaimResult> {
+export async function claimSubdomain(
+  raw: string,
+  templateId: StoreTemplateId = "blank",
+): Promise<ClaimResult> {
   const value = raw.trim().toLowerCase();
   if (!isDnsSafeSubdomain(value)) return { ok: false, reason: "invalid" };
   if (RESERVED_SUBDOMAINS.includes(value)) return { ok: false, reason: "reserved" };
@@ -91,6 +102,19 @@ export async function claimSubdomain(raw: string): Promise<ClaimResult> {
   } catch {
     // Unique-index violation from a concurrent claim of the same address.
     return { ok: false, reason: "taken" };
+  }
+
+  // Seed the builder from the chosen starting point. A tampered/unknown id (and
+  // `blank`) keeps the empty config from provisioning. A failed seed must never
+  // strand the merchant after their address is claimed — they just land in the
+  // builder with a blank store, which is always recoverable.
+  const template = isStoreTemplateId(templateId) ? buildTemplateConfig(templateId) : null;
+  if (template) {
+    try {
+      await saveThemeConfig(storeId, template);
+    } catch {
+      // Claim succeeded; the template is best-effort.
+    }
   }
   return { ok: true };
 }

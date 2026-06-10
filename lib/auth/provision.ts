@@ -106,6 +106,8 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
   });
 
   // 4. seed an empty ThemeConfig so /builder is immediately reachable without notFound().
+  //    Onboarding may overwrite it with a starter template at claim time
+  //    (`claimSubdomain` → `lib/data/store-templates`).
   const emptyTemplate = { sectionOrder: [], sections: {} };
   await ThemeConfigModel.create({
     _id: newId(),

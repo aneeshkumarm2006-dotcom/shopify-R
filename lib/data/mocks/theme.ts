@@ -37,6 +37,7 @@ const footer = section("footer", "footer", {
 
 /* ---- Home template sections (seeded from prototype HOME_CONFIG) ---- */
 const sHero = section("s-hero", "hero", {
+  badge: "Oregon · 21+",
   heading: "Cultivated for\nthe curious",
   subtext:
     "Small-batch flower, solventless extracts, and considered wellness — sourced and delivered with care across Oregon.",

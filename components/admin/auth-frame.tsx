@@ -43,7 +43,14 @@ export function Brand({ size = 26 }: { size?: number }) {
   );
 }
 
-export function AuthFrame({ children }: { children: ReactNode }) {
+export function AuthFrame({
+  children,
+  width = 400,
+}: {
+  children: ReactNode;
+  /** Card column width — onboarding's template picker needs a wider canvas. */
+  width?: number;
+}) {
   return (
     <div
       style={{
@@ -54,7 +61,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
         padding: "var(--space-6)",
       }}
     >
-      <div style={{ width: "100%", maxWidth: 400 }}>
+      <div style={{ width: "100%", maxWidth: width, transition: "max-width 0.25s ease" }}>
         <div
           style={{
             display: "flex",
