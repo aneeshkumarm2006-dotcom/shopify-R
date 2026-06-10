@@ -19,7 +19,14 @@ export async function getThemeConfig(storeId: string): Promise<ThemeConfig | nul
     return HOME_CONFIG.storeId === storeId ? resolve(HOME_CONFIG) : null;
   }
   await dbConnect();
-  return serializeOrNull<ThemeConfig>(await ThemeConfigModel.findOne(scopedFilter(storeId)).lean());
+  // Upsert a blank config for stores provisioned before the ThemeConfig seed was added.
+  return serializeOrNull<ThemeConfig>(
+    await ThemeConfigModel.findOneAndUpdate(
+      scopedFilter(storeId),
+      { $setOnInsert: { storeId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean(),
+  );
 }
 
 /** The mutable shape the builder writes back — `storeId`/timestamps are owned server-side. */

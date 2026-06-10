@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { dbConnect, StoreModel, UserModel, SubscriptionModel } from "@/lib/db";
+import { dbConnect, StoreModel, UserModel, SubscriptionModel, ThemeConfigModel } from "@/lib/db";
 import { emptyBillingSeam } from "@/lib/payments/billing";
 
 /**
@@ -103,6 +103,22 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
     plan: "free",
     status: "active",
     billingSeam: emptyBillingSeam(), // reserved seam, filled by a future processor
+  });
+
+  // 4. seed an empty ThemeConfig so /builder is immediately reachable without notFound().
+  const emptyTemplate = { sectionOrder: [], sections: {} };
+  await ThemeConfigModel.create({
+    _id: newId(),
+    storeId,
+    templates: {
+      home: emptyTemplate,
+      product: emptyTemplate,
+      collection: emptyTemplate,
+      page: emptyTemplate,
+      cart: emptyTemplate,
+    },
+    header: { id: "header", type: "header", settings: {}, blockOrder: [], blocks: {} },
+    footer: { id: "footer", type: "footer", settings: {}, blockOrder: [], blocks: {} },
   });
 
   return { userId, storeId, role: "merchant" };
