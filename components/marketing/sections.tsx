@@ -129,7 +129,7 @@ export function Problem() {
         <div className="mt-12 grid gap-5 md:grid-cols-3">
           {points.map((p) => (
             <div key={p.title} className="rounded-lg border border-border bg-surface p-6">
-              <span className="grid h-10 w-10 place-items-center rounded-md bg-critical-bg text-critical">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-accent-tint text-text-strong">
                 <Icon name={p.icon} size={20} aria-hidden />
               </span>
               <h3 className="mt-4 text-md font-semibold text-text-strong">{p.title}</h3>
@@ -509,7 +509,7 @@ export function FinalCta() {
             <h2 className="font-display text-3xl leading-tight text-bg sm:text-4xl">
               Build the store the others wouldn&apos;t let you.
             </h2>
-            <p className="mt-4 text-md text-bg/80">
+            <p className="mt-4 text-md text-bg">
               Get a compliant storefront live on your subdomain in minutes. Free to start —
               no DevOps, no credit card.
             </p>

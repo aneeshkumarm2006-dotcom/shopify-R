@@ -94,7 +94,13 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
   if (!isAuthConfigured()) {
     return { storeId: MOCK_STORE_ID, ready: true }; // Part A / mock fallback
   }
-  const session = await auth();
+  let session: Awaited<ReturnType<typeof auth>>;
+  try {
+    session = await auth();
+  } catch {
+    // JWTSessionError / decryption failure — treat as unauthenticated (stale cookie)
+    return null;
+  }
   const storeId = session?.user?.storeId;
   if (!storeId) return null;
   const store = await getStore(storeId);
@@ -123,7 +129,12 @@ export async function requireMerchantStoreId(): Promise<string> {
  */
 export async function requireSession(): Promise<void> {
   if (!isAuthConfigured()) return;
-  const session = await auth();
+  let session: Awaited<ReturnType<typeof auth>>;
+  try {
+    session = await auth();
+  } catch {
+    redirect("/sign-in");
+  }
   if (!session?.user?.id) redirect("/sign-in");
 }
 
@@ -137,7 +148,12 @@ export async function requireSession(): Promise<void> {
  */
 export async function requirePlatformAdmin(): Promise<void> {
   if (!isAuthConfigured()) return;
-  const session = await auth();
+  let session: Awaited<ReturnType<typeof auth>>;
+  try {
+    session = await auth();
+  } catch {
+    redirect("/sign-in");
+  }
   if (!session?.user?.id) redirect("/sign-in");
   if (session.user.role !== "platform_admin") notFound();
 }

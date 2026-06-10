@@ -213,14 +213,29 @@ export function HeroPeek() {
               );
             })}
           </div>
-          {/* preview panel */}
+          {/* preview panel — all sections are stacked in one grid cell so the
+              panel height stays fixed (sized to the tallest preview) and does
+              not jump when switching tabs. Only the active one is visible. */}
           <div
             id="hero-peek-panel"
             role="tabpanel"
             aria-live="polite"
-            className="bg-bg-store p-6"
+            className="grid bg-bg-store p-6"
           >
-            <Preview section={active} />
+            {NAV.map((n) => {
+              const selected = active === n.id;
+              return (
+                <div
+                  key={n.id}
+                  aria-hidden={!selected}
+                  className={`col-start-1 row-start-1 transition-opacity duration-fast ${
+                    selected ? "opacity-100" : "invisible opacity-0"
+                  }`}
+                >
+                  <Preview section={n.id} />
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
