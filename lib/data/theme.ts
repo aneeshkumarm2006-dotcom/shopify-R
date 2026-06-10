@@ -9,6 +9,30 @@ import {
   ThemeConfigModel,
 } from "@/lib/db";
 
+const DEFAULT_HEADER: Section = {
+  id: "header",
+  type: "header",
+  settings: { nav: [], showSearch: true, showCart: true },
+  blockOrder: [],
+  blocks: {},
+};
+
+const DEFAULT_FOOTER: Section = {
+  id: "footer",
+  type: "footer",
+  settings: { columns: [] },
+  blockOrder: [],
+  blocks: {},
+};
+
+const DEFAULT_TEMPLATES: Record<TemplateKey, Template> = {
+  home: { sectionOrder: [], sections: {} },
+  product: { sectionOrder: [], sections: {} },
+  collection: { sectionOrder: [], sections: {} },
+  page: { sectionOrder: [], sections: {} },
+  cart: { sectionOrder: [], sections: {} },
+};
+
 /**
  * The store's themeConfig (PRD §5.3) — the object the storefront `StoreRenderer`
  * (Stage 3) and the builder preview (Stage 4) both consume. One per store, read
@@ -20,13 +44,40 @@ export async function getThemeConfig(storeId: string): Promise<ThemeConfig | nul
   }
   await dbConnect();
   // Upsert a blank config for stores provisioned before the ThemeConfig seed was added.
-  return serializeOrNull<ThemeConfig>(
-    await ThemeConfigModel.findOneAndUpdate(
-      scopedFilter(storeId),
-      { $setOnInsert: { storeId } },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    ).lean(),
-  );
+  // $setOnInsert seeds header/footer/templates so new stores never have null sections,
+  // which would crash the builder and StoreRenderer.
+  const doc = await ThemeConfigModel.findOneAndUpdate(
+    scopedFilter(storeId),
+    {
+      $setOnInsert: {
+        storeId,
+        header: DEFAULT_HEADER,
+        footer: DEFAULT_FOOTER,
+        templates: DEFAULT_TEMPLATES,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+
+  // Patch stores provisioned before this fix whose header/footer are still null.
+  const raw = doc as Record<string, unknown> | null;
+  if (raw && (!raw.header || !raw.footer)) {
+    const patch: Record<string, unknown> = {};
+    if (!raw.header) patch.header = DEFAULT_HEADER;
+    if (!raw.footer) patch.footer = DEFAULT_FOOTER;
+    if (!raw.templates || Object.keys(raw.templates as object).length === 0) {
+      patch.templates = DEFAULT_TEMPLATES;
+    }
+    return serializeOrNull<ThemeConfig>(
+      await ThemeConfigModel.findOneAndUpdate(
+        scopedFilter(storeId),
+        { $set: patch },
+        { new: true },
+      ).lean(),
+    );
+  }
+
+  return serializeOrNull<ThemeConfig>(doc);
 }
 
 /** The mutable shape the builder writes back — `storeId`/timestamps are owned server-side. */

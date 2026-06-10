@@ -20,7 +20,7 @@ export default async function BuilderPage() {
     getThemeConfig(storeId),
     getProducts(storeId),
   ]);
-  if (!store || !config) notFound();
+  if (!store || !config || !config.header || !config.footer) notFound();
 
   return (
     <StoreBuilder
