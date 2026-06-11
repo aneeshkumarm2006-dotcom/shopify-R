@@ -15,6 +15,7 @@
  * (the onboarding form uses `lib/data/subdomain.ts`, which is DB-free).
  */
 export * from "./store";
+export * from "./account";
 export * from "./products";
 export * from "./collections";
 export * from "./inventory";

@@ -97,6 +97,12 @@ export interface PlanDefinition {
   currency: string;
   /** Short marketing bullets shown on the billing card. */
   features: string[];
+  /**
+   * Max stores an account on this plan may own — the multi-store entitlement
+   * (`free` is single-store; `standard` unlocks more). Enforced server-side in the
+   * `createStore` action via `storeCapForPlan`; surfaced as the switcher's upgrade lock.
+   */
+  storeCap: number;
 }
 
 /**

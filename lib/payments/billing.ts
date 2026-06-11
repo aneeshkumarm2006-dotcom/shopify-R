@@ -32,19 +32,30 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
     priceMonthly: 0,
     currency: "$",
     features: ["1 store", "Storefront builder", "Up to 50 products", "Manual order settlement"],
+    storeCap: 1,
   },
   standard: {
     id: "standard",
     name: "Standard",
     priceMonthly: 29,
     currency: "$",
-    features: ["Everything in Free", "Unlimited products", "Custom code injection", "Priority support"],
+    features: ["Up to 10 stores", "Unlimited products", "Custom code injection", "Priority support"],
+    storeCap: 10,
   },
 };
 
 /** Look up a plan definition, falling back to `free`. */
 export function getPlan(plan: SubscriptionPlan): PlanDefinition {
   return PLAN_CATALOG[plan] ?? PLAN_CATALOG.free;
+}
+
+/**
+ * Max stores an account on `plan` may own. `getPlan` falls back to `free`, so an
+ * unknown/absent plan safely caps at 1. This is the single source of truth the
+ * `createStore` action re-checks server-side and the switcher reads to lock "Create".
+ */
+export function storeCapForPlan(plan: SubscriptionPlan): number {
+  return getPlan(plan).storeCap;
 }
 
 /** The catalog as an ordered list (free → standard) for plan-comparison UIs. */

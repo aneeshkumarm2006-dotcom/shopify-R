@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { updateStore, type StoreUpdate } from "@/lib/data";
+import type { SubscriptionPlan } from "@/types";
+import { updateStore, setSubscriptionPlan, type StoreUpdate } from "@/lib/data";
 import { requireMerchantStoreId } from "@/lib/auth";
 
 /**
@@ -17,5 +18,21 @@ export async function saveStoreSettings(
   if (!saved) return { ok: false };
   revalidatePath("/settings");
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+/**
+ * Change the active store's subscription plan (manual billing — no processor in the
+ * MVP). `requireMerchantStoreId` resolves the signed-in merchant's active, ownership-
+ * verified store, so a caller can only ever change their own plan. Revalidates the
+ * admin layout so the store-switcher's premium cap (free 1 → standard 10) updates.
+ */
+export async function setPlanAction(plan: SubscriptionPlan): Promise<{ ok: boolean }> {
+  if (plan !== "free" && plan !== "standard") return { ok: false };
+  const storeId = await requireMerchantStoreId();
+  const updated = await setSubscriptionPlan(storeId, plan);
+  if (!updated) return { ok: false };
+  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   return { ok: true };
 }

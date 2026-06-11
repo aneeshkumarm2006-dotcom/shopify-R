@@ -10,7 +10,8 @@ export interface User extends Timestamps {
   email: string; // unique; from Google OAuth
   name: string;
   googleId: string; // OAuth subject
-  storeId: Id; // the one store this user owns (1:1 in MVP)
+  activeStoreId: Id; // the store currently selected in the dashboard (switchable)
+  primaryStoreId: Id; // first store; anchors the account's effective plan
   role: UserRole; // `merchant` (reserved: `platform_admin`)
 }
 

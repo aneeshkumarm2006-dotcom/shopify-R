@@ -32,7 +32,7 @@ export interface MerchantIdentity {
 /** Narrow shape we read back from the loosely-typed (`Model<any>`) user doc. */
 interface UserLean {
   _id: string;
-  storeId?: string;
+  activeStoreId?: string;
   role?: "merchant" | "platform_admin";
 }
 
@@ -44,6 +44,68 @@ function newId(): string {
 function defaultStoreName(name: string, email: string): string {
   const base = (name || email.split("@")[0] || "My").trim();
   return `${base.split(/\s+/)[0]}'s store`;
+}
+
+/**
+ * Create one store (+ its empty ThemeConfig + a free subscription) owned by `userId`,
+ * returning the new storeId. This is the single unit of "a store now exists on the
+ * platform", shared by first-login provisioning (the primary store) and the multi-store
+ * `createStore` action (additional stores). It deliberately does NOT touch the user's
+ * `activeStoreId` / `primaryStoreId` pointers — the caller owns that decision.
+ */
+export async function createStoreForUser(
+  userId: string,
+  input: { name: string; contactEmail: string },
+): Promise<string> {
+  await dbConnect();
+  const storeId = newId();
+
+  // Empty DRAFT store — subdomain intentionally unset until onboarding claims it.
+  // Seed type-complete sub-objects so admin screens render before configuration.
+  await StoreModel.create({
+    _id: storeId,
+    ownerId: userId,
+    name: input.name,
+    status: "draft",
+    ageGate: {
+      enabled: true,
+      minAge: 21,
+      message:
+        "You must be 21 or older to enter this store. Please verify your age to continue.",
+    },
+    settings: { currency: "$", contactEmail: input.contactEmail, socialLinks: [] },
+    seoDefaults: { title: "", description: "" },
+    codeInjection: { headHtml: "", bodyHtml: "", customCss: "", customJs: "" },
+  });
+
+  // Each store carries its own (free, manually-provisioned) subscription.
+  await SubscriptionModel.create({
+    _id: newId(),
+    ownerId: userId,
+    storeId,
+    plan: "free",
+    status: "active",
+    billingSeam: emptyBillingSeam(),
+  });
+
+  // Empty ThemeConfig so /builder is immediately reachable without notFound().
+  // Onboarding may overwrite it with a starter template at claim time.
+  const emptyTemplate = { sectionOrder: [], sections: {} };
+  await ThemeConfigModel.create({
+    _id: newId(),
+    storeId,
+    templates: {
+      home: emptyTemplate,
+      product: emptyTemplate,
+      collection: emptyTemplate,
+      page: emptyTemplate,
+      cart: emptyTemplate,
+    },
+    header: { id: "header", type: "header", settings: {}, blockOrder: [], blocks: {} },
+    footer: { id: "footer", type: "footer", settings: {}, blockOrder: [], blocks: {} },
+  });
+
+  return storeId;
 }
 
 export async function provisionMerchant(input: ProvisionInput): Promise<MerchantIdentity> {
@@ -58,16 +120,15 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
   if (existing) {
     return {
       userId: String(existing._id),
-      storeId: String(existing.storeId),
+      storeId: String(existing.activeStoreId),
       role: existing.role ?? "merchant",
     };
   }
 
-  // ---- First login: provision user → store → subscription, then link them. ----
+  // ---- First login: provision the user, then their PRIMARY store. ----
   const userId = newId();
-  const storeId = newId();
 
-  // 1. user (no storeId yet — sparse unique index permits the gap)
+  // 1. user (no store pointers yet — sparse fields permit the gap until step 3)
   await UserModel.create({
     _id: userId,
     email: input.email.toLowerCase(),
@@ -76,51 +137,17 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
     role: "merchant",
   });
 
-  // 2. empty DRAFT store — subdomain intentionally unset until onboarding claims it.
-  //    Seed type-complete sub-objects so admin screens render before configuration.
-  await StoreModel.create({
-    _id: storeId,
-    ownerId: userId,
+  // 2. the primary store (+ its subscription + empty theme), via the shared unit.
+  const storeId = await createStoreForUser(userId, {
     name: defaultStoreName(input.name, input.email),
-    status: "draft",
-    ageGate: {
-      enabled: true,
-      minAge: 21,
-      message:
-        "You must be 21 or older to enter this store. Please verify your age to continue.",
-    },
-    settings: { currency: "$", contactEmail: input.email.toLowerCase(), socialLinks: [] },
-    seoDefaults: { title: "", description: "" },
-    codeInjection: { headHtml: "", bodyHtml: "", customCss: "", customJs: "" },
+    contactEmail: input.email.toLowerCase(),
   });
 
-  // 3. link store to user (1:1 ownership) + provision the subscription.
-  await UserModel.findByIdAndUpdate(userId, { storeId });
-  await SubscriptionModel.create({
-    _id: newId(),
-    ownerId: userId,
-    storeId,
-    plan: "free",
-    status: "active",
-    billingSeam: emptyBillingSeam(), // reserved seam, filled by a future processor
-  });
-
-  // 4. seed an empty ThemeConfig so /builder is immediately reachable without notFound().
-  //    Onboarding may overwrite it with a starter template at claim time
-  //    (`claimSubdomain` → `lib/data/store-templates`).
-  const emptyTemplate = { sectionOrder: [], sections: {} };
-  await ThemeConfigModel.create({
-    _id: newId(),
-    storeId,
-    templates: {
-      home: emptyTemplate,
-      product: emptyTemplate,
-      collection: emptyTemplate,
-      page: emptyTemplate,
-      cart: emptyTemplate,
-    },
-    header: { id: "header", type: "header", settings: {}, blockOrder: [], blocks: {} },
-    footer: { id: "footer", type: "footer", settings: {}, blockOrder: [], blocks: {} },
+  // 3. point the user at it as BOTH active (current selection) and primary (the
+  //    anchor for the account's effective plan).
+  await UserModel.findByIdAndUpdate(userId, {
+    activeStoreId: storeId,
+    primaryStoreId: storeId,
   });
 
   return { userId, storeId, role: "merchant" };

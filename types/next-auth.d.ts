@@ -2,14 +2,16 @@ import type { UserRole } from "./store";
 
 /**
  * Augment NextAuth's `Session`/`JWT` with the merchant identity our `jwt` and
- * `session` callbacks stamp on at sign-in (see `lib/auth`). This is what lets
- * server guards read `session.user.storeId` in a typed way.
+ * `session` callbacks stamp on at sign-in (see `lib/auth`). The token carries only
+ * the immutable identity (`userId`, `role`); the *active store* is resolved from
+ * `users.activeStoreId` in the DB per request (multi-store), so it is intentionally
+ * NOT on the session/token — that keeps the DB the single source of truth and lets
+ * the ownership guard authorize every store access in one place.
  */
 declare module "next-auth" {
   interface Session {
     user: {
       id: string;
-      storeId: string;
       role: UserRole;
       name?: string | null;
       email?: string | null;
@@ -21,7 +23,6 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     userId?: string;
-    storeId?: string;
     role?: UserRole;
   }
 }

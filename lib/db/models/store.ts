@@ -10,7 +10,13 @@ const UserSchema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     name: { type: String, required: true },
     googleId: { type: String, required: true, unique: true }, // OAuth subject
-    storeId: { type: String, unique: true, sparse: true }, // 1:1 store ownership (MVP)
+    // Multi-store ownership: a user owns N stores (queried via `Store.ownerId`).
+    // `activeStoreId` is the currently-selected store (NOT unique — many users may
+    // point at one of their own); `primaryStoreId` is the first store, the anchor
+    // for the account's effective plan (`getAccountPlan`). Both sparse: unset for a
+    // brand-new user until provisioning sets them.
+    activeStoreId: { type: String, sparse: true },
+    primaryStoreId: { type: String, sparse: true },
     role: { type: String, enum: ["merchant", "platform_admin"], default: "merchant" },
   },
   baseSchemaOptions,
@@ -31,7 +37,7 @@ const AgeGateSchema = new Schema(
 const StoreSchema = new Schema(
   {
     _id: stringId,
-    ownerId: { type: String, required: true },
+    ownerId: { type: String, required: true, index: true }, // fan-out key: all stores a user owns
     name: { type: String, required: true },
     // Unique but SPARSE + optional: a store is provisioned at first login (Stage 7)
     // *before* the merchant claims an address in onboarding, so the field is unset

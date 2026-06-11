@@ -1,4 +1,4 @@
-import type { AgeGate, CodeInjection, SeoDefaults, Store, StoreSettings, Subscription, User } from "@/types";
+import type { AgeGate, CodeInjection, SeoDefaults, Store, StoreSettings, Subscription, SubscriptionPlan, User } from "@/types";
 import { mockStore, mockSubscription, mockUser } from "./mocks";
 import { resolve } from "./_util";
 import {
@@ -37,10 +37,14 @@ export async function getStoreBySubdomain(subdomain: string): Promise<Store | nu
 
 export async function getStoreOwner(storeId: string): Promise<User | null> {
   if (!isDbConfigured()) {
-    return mockUser.storeId === storeId ? resolve(mockUser) : null;
+    return mockStore._id === storeId ? resolve(mockUser) : null;
   }
+  // Under multi-store, owner resolves via `store.ownerId` (not a user→store back-ref:
+  // a user owns many stores, so `findOne({ storeId })` no longer identifies the owner).
   await dbConnect();
-  return serializeOrNull<User>(await UserModel.findOne({ storeId }).lean());
+  const store = await StoreModel.findById(storeId).lean<{ ownerId?: string } | null>();
+  if (!store?.ownerId) return null;
+  return serializeOrNull<User>(await UserModel.findById(store.ownerId).lean());
 }
 
 export async function getSubscription(storeId: string): Promise<Subscription | null> {
@@ -49,6 +53,26 @@ export async function getSubscription(storeId: string): Promise<Subscription | n
   }
   await dbConnect();
   return serializeOrNull<Subscription>(await SubscriptionModel.findOne({ storeId }).lean());
+}
+
+/**
+ * Set a store's subscription plan. Billing is a stubbed seam in the MVP (no
+ * processor), so the plan is changed directly here — this is what the Settings
+ * billing card's clickable plan selector calls. The account's effective plan + store
+ * cap read from the PRIMARY store's subscription (`getAccountPlan`), so changing the
+ * plan on the primary store is what moves the multi-store entitlement.
+ */
+export async function setSubscriptionPlan(
+  storeId: string,
+  plan: SubscriptionPlan,
+): Promise<Subscription | null> {
+  if (!isDbConfigured()) {
+    return mockSubscription.storeId === storeId ? resolve({ ...mockSubscription, plan }) : null;
+  }
+  await dbConnect();
+  return serializeOrNull<Subscription>(
+    await SubscriptionModel.findOneAndUpdate({ storeId }, { $set: { plan } }, { new: true }).lean(),
+  );
 }
 
 /** The store fields the Settings screen can edit (Stage 9 onward). */

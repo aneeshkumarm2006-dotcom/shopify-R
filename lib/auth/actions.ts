@@ -1,6 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import type { SubscriptionPlan } from "@/types";
 import { isDbConfigured, dbConnect, StoreModel } from "@/lib/db";
+import {
+  getStoreCapStatus,
+  setActiveStore as setActiveStoreForUser,
+} from "@/lib/data/account";
+import { createStoreForUser } from "./provision";
 import {
   checkSubdomain,
   isDnsSafeSubdomain,
@@ -13,7 +20,7 @@ import {
   type StoreTemplateId,
 } from "@/lib/data/store-templates";
 import { saveThemeConfig } from "@/lib/data/theme";
-import { auth, signIn, signOut, isAuthConfigured } from "./index";
+import { auth, signIn, signOut, isAuthConfigured, getMerchantContext } from "./index";
 
 /**
  * Server actions backing the auth UI (sign-in, onboarding, sign-out). Each one
@@ -57,8 +64,10 @@ export async function checkSubdomainAvailability(raw: string): Promise<Subdomain
   }
 
   await dbConnect();
-  const session = await auth();
-  const ownStoreId = session?.user?.storeId;
+  // Exclude the caller's OWN active store from the clash check (re-claiming the same
+  // address is fine). The active store is ownership-verified inside getMerchantContext.
+  const ctx = await getMerchantContext();
+  const ownStoreId = ctx?.storeId;
   const clash = await StoreModel.findOne({
     subdomain: value,
     ...(ownStoreId ? { _id: { $ne: ownStoreId } } : {}),
@@ -89,8 +98,10 @@ export async function claimSubdomain(
 
   if (!isAuthConfigured()) return { ok: true }; // Part A: nothing to persist
 
-  const session = await auth();
-  const storeId = session?.user?.storeId;
+  // Claim onto the merchant's ACTIVE store (ownership-verified by getMerchantContext) —
+  // for a multi-store user mid-onboarding, that's the store they just created.
+  const ctx = await getMerchantContext();
+  const storeId = ctx?.storeId;
   if (!storeId) return { ok: false, reason: "invalid" }; // not signed in
 
   await dbConnect();
@@ -117,4 +128,64 @@ export async function claimSubdomain(
     }
   }
   return { ok: true };
+}
+
+/* ============================================================
+   Multi-store: switch the active store / create an additional one.
+   ============================================================ */
+
+/**
+ * Switch the signed-in user's ACTIVE store. The actual write is ownership-guarded in
+ * the data layer (`setActiveStoreForUser` only writes a store the user owns), so a
+ * crafted `storeId` for another tenant is rejected here — this is the switch IDOR seam.
+ * On success the admin layout is revalidated so every screen re-resolves to the new
+ * store. Stub mode (no auth) has a single demo store, so it's a no-op success.
+ */
+export async function setActiveStore(storeId: string): Promise<{ ok: boolean }> {
+  if (!isAuthConfigured()) return { ok: true };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false };
+  const ok = await setActiveStoreForUser(userId, storeId);
+  if (ok) revalidatePath("/", "layout");
+  return { ok };
+}
+
+export type CreateStoreResult =
+  | { ok: true; storeId: string }
+  | { ok: false; reason: "upgrade_required"; plan: SubscriptionPlan; cap: number; count: number }
+  | { ok: false; reason: "unauthenticated" };
+
+/**
+ * Create an ADDITIONAL store for the signed-in user and switch to it. Premium-gated:
+ * the account's store cap (`free` = 1, `standard` = 10) is re-checked SERVER-SIDE here
+ * — the switcher's "Upgrade" lock is cosmetic; this is the authoritative gate that also
+ * replaces the dropped one-store-per-account DB index. `ownerId` is taken from the
+ * session only, never the client. On success the new (subdomain-less) store becomes
+ * active and the caller routes to `/onboarding` to claim its address.
+ */
+export async function createStore(): Promise<CreateStoreResult> {
+  if (!isAuthConfigured()) return { ok: false, reason: "unauthenticated" };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, reason: "unauthenticated" };
+
+  const status = await getStoreCapStatus(userId);
+  if (status.atCap) {
+    return {
+      ok: false,
+      reason: "upgrade_required",
+      plan: status.plan,
+      cap: status.cap,
+      count: status.count,
+    };
+  }
+
+  const storeId = await createStoreForUser(userId, {
+    name: "New store",
+    contactEmail: session?.user?.email ?? "",
+  });
+  await setActiveStoreForUser(userId, storeId);
+  revalidatePath("/", "layout");
+  return { ok: true, storeId };
 }

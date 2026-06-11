@@ -2,8 +2,8 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import type { Store, Subscription } from "@/types";
-import { saveStoreSettings } from "@/app/(admin)/settings/actions";
+import type { Store, Subscription, SubscriptionPlan } from "@/types";
+import { saveStoreSettings, setPlanAction } from "@/app/(admin)/settings/actions";
 import { unpublishStoreAction } from "@/app/(admin)/publish/actions";
 import {
   Button,
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
 import { storeDomain } from "@/lib/format";
-import { getPlan } from "@/lib/payments/billing";
+import { getPlan, listPlans } from "@/lib/payments/billing";
 
 /**
  * Settings (DESIGN §4.10) — store info · brand/logo · domain · SEO defaults · code
@@ -43,8 +43,25 @@ export function Settings({
   const [status, setStatus] = useState(store.status);
   const mark = () => setDirty(true);
 
-  // Billing plan (placeholder catalog — free/standard, Stage 12).
-  const plan = getPlan(subscription.plan);
+  // Billing plan (placeholder catalog — free/standard, Stage 12). Billing is stubbed
+  // (no processor), so the plan is clickable here and switches instantly.
+  const plans = listPlans();
+  const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan>(subscription.plan);
+  const [planPending, startPlanTransition] = useTransition();
+
+  function choosePlan(next: SubscriptionPlan) {
+    if (next === currentPlan || planPending) return;
+    startPlanTransition(async () => {
+      const res = await setPlanAction(next);
+      if (res.ok) {
+        setCurrentPlan(next);
+        toast(`Switched to ${getPlan(next).name} plan.`, { tone: "success" });
+        router.refresh();
+      } else {
+        toast("Couldn't change plan.", { tone: "critical" });
+      }
+    });
+  }
 
   // Store details
   const [name, setName] = useState(store.name);
@@ -422,36 +439,63 @@ export function Settings({
           </Field>
         </Card>
 
-        {/* Plan & billing — plans are placeholders; billing is provisioned
-            manually in the MVP, so "Manage billing" stays disabled (Stage 12). */}
+        {/* Plan & billing — billing is stubbed in the MVP (no processor), so the plan
+            is selectable here and switches instantly. Standard unlocks multi-store. */}
         <Card title="Plan & billing">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--space-4)",
-            }}
-          >
-            <div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontWeight: 600, color: "var(--text-strong)" }}>
-                  {plan.name} plan
-                </span>
-                <span className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-                  {plan.priceMonthly === 0 ? "Free" : `${plan.currency}${plan.priceMonthly}/mo`}
-                </span>
-              </div>
-              <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 2 }}>
-                {plan.features.join(" · ")}
-              </div>
-              <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 6 }}>
-                Provisioned manually by Offshelf.
-              </div>
-            </div>
-            <Button variant="default" disabled>
-              Manage billing
-            </Button>
+          <div style={{ display: "grid", gap: "var(--space-3)" }}>
+            {plans.map((p) => {
+              const active = p.id === currentPlan;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => choosePlan(p.id)}
+                  disabled={planPending}
+                  aria-pressed={active}
+                  style={{
+                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "var(--space-4)",
+                    padding: "var(--space-4)",
+                    borderRadius: "var(--radius-md)",
+                    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                    background: active ? "var(--surface-subtle)" : "transparent",
+                    cursor: planPending ? "default" : "pointer",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-strong)" }}>
+                        {p.name} plan
+                      </span>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}
+                      >
+                        {p.priceMonthly === 0 ? "Free" : `${p.currency}${p.priceMonthly}/mo`}
+                      </span>
+                    </div>
+                    <div
+                      style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 2 }}
+                    >
+                      {p.features.join(" · ")}
+                    </div>
+                  </div>
+                  {active ? (
+                    <Pill tone="success">Active</Pill>
+                  ) : (
+                    <span style={{ fontSize: "var(--text-sm)", color: "var(--accent-pressed)", fontWeight: 600 }}>
+                      Switch
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: "var(--space-3)" }}>
+            Billing is provisioned manually in the MVP — switching is instant, no payment.
           </div>
         </Card>
 

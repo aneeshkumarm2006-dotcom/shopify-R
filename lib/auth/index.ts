@@ -1,7 +1,7 @@
 import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
 import { redirect, notFound } from "next/navigation";
-import { getStore } from "@/lib/data/store";
+import { resolveActiveStore } from "@/lib/data/account";
 import { MOCK_STORE_ID } from "@/lib/data/mocks";
 import { provisionMerchant } from "./provision";
 
@@ -9,9 +9,11 @@ import { provisionMerchant } from "./provision";
  * Real auth (TODO Stage 7, PRD §6.1 / §7.1) — NextAuth (Auth.js v5) with a single
  * Google OAuth provider and a stateless **JWT** session (no DB session table; the
  * merchant's identity lives in the signed token). On the *first* sign-in the `jwt`
- * callback provisions the user + draft store + subscription (see `./provision`)
- * and stamps the resulting `storeId` into the token, so every later request knows
- * which tenant the session owns without another lookup.
+ * callback provisions the user + primary draft store + subscription (see `./provision`)
+ * and stamps the immutable identity (`userId`, `role`) into the token. The *active*
+ * store is deliberately NOT in the token — a user owns many stores and can switch, so
+ * the active store is resolved (and ownership-verified) from the DB per request in
+ * `getMerchantContext` → `resolveActiveStore`.
  *
  * ### Graceful degradation
  * The whole system is gated on `isAuthConfigured()`. With the OAuth/secret env
@@ -58,7 +60,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: String(profile.name ?? profile.email),
         });
         token.userId = identity.userId;
-        token.storeId = identity.storeId;
         token.role = identity.role;
       }
       return token;
@@ -67,7 +68,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = String(token.userId ?? "");
-        session.user.storeId = String(token.storeId ?? "");
         session.user.role = (token.role as "merchant" | "platform_admin") ?? "merchant";
       }
       return session;
@@ -101,11 +101,14 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
     // JWTSessionError / decryption failure — treat as unauthenticated (stale cookie)
     return null;
   }
-  const storeId = session?.user?.storeId;
-  if (!storeId) return null;
-  const store = await getStore(storeId);
+  const userId = session?.user?.id;
+  if (!userId) return null;
+  // Resolve the active store from the DB, ownership-verified + self-healing. This is
+  // the single chokepoint that authorizes every admin store access (PRD §9): a user
+  // can only ever land on a store they own, no matter what active store is recorded.
+  const store = await resolveActiveStore(userId);
   if (!store) return null;
-  return { storeId, ready: Boolean(store.subdomain) };
+  return { storeId: store._id, ready: Boolean(store.subdomain) };
 }
 
 /**

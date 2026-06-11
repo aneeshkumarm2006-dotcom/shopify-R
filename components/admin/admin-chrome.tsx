@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Customer, Order, Product, Store, Subscription, User } from "@/types";
+import type { StoreCapStatus } from "@/lib/data/account";
 import { useTheme } from "@/components/theme-provider";
 import {
   Avatar,
@@ -20,9 +21,10 @@ import {
   Pill,
   ToastProvider,
   useCommandPalette,
+  useToast,
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
-import { doSignOut } from "@/lib/auth/actions";
+import { createStore, doSignOut, setActiveStore } from "@/lib/auth/actions";
 import { storeDomain, storeOrigin } from "@/lib/format";
 
 /**
@@ -39,6 +41,10 @@ export interface AdminChromeProps {
   store: Store;
   owner: User;
   subscription: Subscription;
+  /** Every store the signed-in user owns — populates the store switcher. */
+  stores: Store[];
+  /** Account plan + store-cap status — gates the switcher's "Create new store". */
+  capStatus: StoreCapStatus;
   /** Slim records used to populate the ⌘K jump-to index. */
   products: Product[];
   orders: Order[];
@@ -159,7 +165,12 @@ function ShellWithPalette(props: AdminChromeProps) {
           outCount={props.outCount}
         />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <Topbar store={store} owner={owner} />
+          <Topbar
+            store={store}
+            owner={owner}
+            stores={props.stores}
+            capStatus={props.capStatus}
+          />
           <main className="admin-main">
             <div className="admin-content">{props.children}</div>
           </main>
@@ -254,7 +265,140 @@ function Sidebar({
   );
 }
 
-function Topbar({ store, owner }: { store: Store; owner: User }) {
+/**
+ * Store switcher (multi-store). The trigger shows the active store name; the menu lists
+ * every store the user owns (the active one checked) and a "Create new store" item that
+ * is LOCKED with an upgrade hint when the account is at its plan's store cap. Switching
+ * and creating both go through ownership/cap-guarded server actions — this UI is purely
+ * the entry point, never the authority.
+ */
+function StoreSwitcher({
+  activeStore,
+  stores,
+  capStatus,
+}: {
+  activeStore: Store;
+  stores: Store[];
+  capStatus: StoreCapStatus;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+
+  function switchTo(storeId: string, close: () => void) {
+    close();
+    if (storeId === activeStore._id) return;
+    startTransition(async () => {
+      const res = await setActiveStore(storeId);
+      if (res.ok) {
+        router.push("/dashboard");
+        router.refresh();
+      } else {
+        toast("Couldn't switch store.", { tone: "critical" });
+      }
+    });
+  }
+
+  function onCreate(close: () => void) {
+    close();
+    startTransition(async () => {
+      const res = await createStore();
+      if (res.ok) {
+        router.push("/onboarding");
+        router.refresh();
+      } else if (res.reason === "upgrade_required") {
+        toast(`Your ${res.plan} plan allows ${res.cap} store${res.cap === 1 ? "" : "s"}. Upgrade to add more.`, {
+          tone: "info",
+          icon: "lock",
+        });
+        router.push("/settings");
+      } else {
+        toast("Couldn't create store.", { tone: "critical" });
+      }
+    });
+  }
+
+  return (
+    <Dropdown
+      align="left"
+      width={260}
+      trigger={
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          style={{ padding: "2px 6px", gap: 6, maxWidth: 240 }}
+          aria-label="Switch store"
+          disabled={pending}
+        >
+          <span
+            style={{
+              fontWeight: 600,
+              fontSize: "var(--text-sm)",
+              color: "var(--text-strong)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {activeStore.name}
+          </span>
+          <Icon name="chevronDown" size={14} aria-hidden style={{ color: "var(--text-muted)" }} />
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuLabel>Your stores</MenuLabel>
+          {stores.map((s) => {
+            const active = s._id === activeStore._id;
+            return (
+              <MenuItem
+                key={s._id}
+                icon="store"
+                onClick={() => switchTo(s._id, close)}
+                hint={
+                  active ? (
+                    <Icon name="check" size={14} aria-hidden style={{ color: "var(--accent)" }} />
+                  ) : !s.subdomain ? (
+                    <span style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>Draft</span>
+                  ) : undefined
+                }
+              >
+                {s.name}
+              </MenuItem>
+            );
+          })}
+          <MenuSeparator />
+          {capStatus.atCap ? (
+            <MenuItem
+              icon="lock"
+              hint={<span style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>Upgrade</span>}
+              onClick={() => onCreate(close)}
+            >
+              Create new store
+            </MenuItem>
+          ) : (
+            <MenuItem icon="plus" onClick={() => onCreate(close)}>
+              Create new store
+            </MenuItem>
+          )}
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
+function Topbar({
+  store,
+  owner,
+  stores,
+  capStatus,
+}: {
+  store: Store;
+  owner: User;
+  stores: Store[];
+  capStatus: StoreCapStatus;
+}) {
   const { theme, toggleTheme } = useTheme();
   const { open } = useCommandPalette();
   const router = useRouter();
@@ -263,16 +407,7 @@ function Topbar({ store, owner }: { store: Store; owner: User }) {
   return (
     <header className="admin-topbar">
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <span
-          style={{
-            fontWeight: 600,
-            fontSize: "var(--text-sm)",
-            color: "var(--text-strong)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {store.name}
-        </span>
+        <StoreSwitcher activeStore={store} stores={stores} capStatus={capStatus} />
         <span style={{ color: "var(--warm-300)" }} aria-hidden>
           ·
         </span>

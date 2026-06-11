@@ -6,6 +6,8 @@ import {
   getProducts,
   getStore,
   getStoreOwner,
+  getStoreCapStatus,
+  getStoresForOwner,
   getSubscription,
 } from "@/lib/data";
 import { getMerchantContext } from "@/lib/auth";
@@ -39,6 +41,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   if (!store || !owner || !subscription) notFound();
 
+  // The user's full store list + premium store-cap status drive the store switcher.
+  const [stores, capStatus] = await Promise.all([
+    getStoresForOwner(owner._id),
+    getStoreCapStatus(owner._id),
+  ]);
+
   const unfulfilledCount = orders.filter((o) => o.fulfillmentStatus === "unfulfilled").length;
   const lowCount = lowStock.filter((r) => r.status === "low").length;
   const outCount = lowStock.filter((r) => r.status === "out").length;
@@ -48,6 +56,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       store={store}
       owner={owner}
       subscription={subscription}
+      stores={stores}
+      capStatus={capStatus}
       products={products}
       orders={orders}
       customers={customers}

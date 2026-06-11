@@ -12,8 +12,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,css,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
     "seed": "tsx scripts/seed.ts",
+    "migrate:multistore": "tsx scripts/migrate-multistore.ts",
     "db:check": "tsx scripts/check-counter.ts",
-    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/subdomain.test.ts tests/sanitize.test.ts tests/store-templates.test.ts"
+    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/subdomain.test.ts tests/sanitize.test.ts tests/store-templates.test.ts tests/store-cap.test.ts"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
