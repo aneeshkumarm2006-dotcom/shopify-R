@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { saveThemeConfig, type ThemeConfigInput } from "@/lib/data";
-import { requireMerchantStoreId } from "@/lib/auth";
+import { requireMerchantStoreId, assertNotImpersonating } from "@/lib/auth";
 
 /**
  * Builder persistence action (Stage 11, PRD §6.2). Both the autosave debounce and
@@ -18,6 +18,7 @@ export async function saveThemeConfigAction(
   input: ThemeConfigInput,
 ): Promise<{ ok: boolean }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const saved = await saveThemeConfig(storeId, input);
   if (!saved) return { ok: false };
   revalidatePath("/builder");

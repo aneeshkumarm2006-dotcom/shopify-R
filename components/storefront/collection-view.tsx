@@ -1,11 +1,11 @@
 import type { Collection, Product } from "@/types";
-import { ProductCard } from "@/components/sections/product-card";
 import { EmptyState } from "@/components/ui/states";
+import { CollectionFilterBar } from "./collection-filter-bar";
 
 /**
- * Collection listing (DESIGN §5.4) — title + a simple product count, then the 4:5
- * product-card grid. No faceted filters in MVP (out of scope); an empty collection
- * renders a designed empty state, not a broken grid.
+ * Collection listing (DESIGN §5.4) — title + a simple product count, then a
+ * client-side filter/sort bar over the loaded products and the 4:5 product-card grid.
+ * A genuinely empty collection renders a designed empty state, not a broken grid.
  */
 export function CollectionView({
   collection,
@@ -42,11 +42,7 @@ export function CollectionView({
           body="This collection doesn't have any products right now. Check back soon."
         />
       ) : (
-        <div className="store-grid" style={{ ["--cols" as string]: 4 }}>
-          {products.map((p) => (
-            <ProductCard key={p._id} product={p} currency={currency} />
-          ))}
-        </div>
+        <CollectionFilterBar products={products} currency={currency} />
       )}
     </div>
   );

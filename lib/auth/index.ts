@@ -2,8 +2,12 @@ import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
 import { redirect, notFound } from "next/navigation";
 import { resolveActiveStore } from "@/lib/data/account";
+import { getStore } from "@/lib/data/store";
 import { MOCK_STORE_ID } from "@/lib/data/mocks";
 import { provisionMerchant } from "./provision";
+import { readImpersonation, ImpersonationReadOnlyError } from "./impersonation";
+
+export { ImpersonationReadOnlyError } from "./impersonation";
 
 /**
  * Real auth (TODO Stage 7, PRD §6.1 / §7.1) — NextAuth (Auth.js v5) with a single
@@ -83,6 +87,12 @@ export interface MerchantContext {
   storeId: string;
   /** A claimed subdomain marks onboarding complete — the dashboard is reachable. */
   ready: boolean;
+  /** True when a platform_admin is viewing this store via impersonation (read-only). */
+  impersonating?: boolean;
+  /** The operator's user id during impersonation (for the audit trail / banner). */
+  operatorId?: string;
+  /** The impersonated store's real owner (for the banner). */
+  ownerId?: string;
 }
 
 /**
@@ -103,12 +113,44 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
   }
   const userId = session?.user?.id;
   if (!userId) return null;
-  // Resolve the active store from the DB, ownership-verified + self-healing. This is
-  // the single chokepoint that authorizes every admin store access (PRD §9): a user
-  // can only ever land on a store they own, no matter what active store is recorded.
+
+  // Impersonation branch — the ONLY path that returns a store the user doesn't own,
+  // and reachable ONLY by a platform_admin holding a valid, operator-bound, unexpired
+  // impersonation cookie (signature/expiry checked in `readImpersonation`). A merchant
+  // with a forged/stolen cookie fails the role gate and falls through to the normal
+  // ownership-checked path below, so the tenant invariant is never weakened for them.
+  if (session?.user?.role === "platform_admin") {
+    const imp = await readImpersonation();
+    if (imp && imp.operatorId === userId) {
+      const target = await getStore(imp.storeId);
+      if (target) {
+        return {
+          storeId: target._id,
+          ready: Boolean(target.subdomain),
+          impersonating: true,
+          operatorId: userId,
+          ownerId: target.ownerId,
+        };
+      }
+    }
+  }
+
+  // Normal path: resolve the active store from the DB, ownership-verified + self-healing.
+  // This is the single chokepoint that authorizes every admin store access (PRD §9): a
+  // user can only ever land on a store they own, no matter what active store is recorded.
   const store = await resolveActiveStore(userId);
   if (!store) return null;
   return { storeId: store._id, ready: Boolean(store.subdomain) };
+}
+
+/**
+ * Block a mutating action while a platform_admin is impersonating (read-only v1).
+ * Re-derives the impersonation state server-side from `getMerchantContext` — never a
+ * client flag. Mutating actions call this right after `requireMerchantStoreId()`.
+ */
+export async function assertNotImpersonating(): Promise<void> {
+  const ctx = await getMerchantContext();
+  if (ctx?.impersonating) throw new ImpersonationReadOnlyError();
 }
 
 /**
@@ -119,6 +161,21 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
  */
 export async function requireMerchantStoreId(): Promise<string> {
   if (!isAuthConfigured()) return MOCK_STORE_ID;
+
+  // Pure operators (platform_admin) live in the separate /platform portal and have no
+  // merchant store UI — EXCEPT while actively impersonating a store (read-only view).
+  let session: Session | null = null;
+  try {
+    session = await auth();
+  } catch {
+    redirect("/sign-in");
+  }
+  if (!session?.user?.id) redirect("/sign-in");
+  if (session.user.role === "platform_admin") {
+    const imp = await readImpersonation();
+    if (!imp || imp.operatorId !== session.user.id) redirect("/platform");
+  }
+
   const ctx = await getMerchantContext();
   if (!ctx) redirect("/sign-in");
   if (!ctx.ready) redirect("/onboarding");
@@ -130,6 +187,20 @@ export async function requireMerchantStoreId(): Promise<string> {
  * tenant's onboarding state. Ensures a signed-in session exists. Cross-tenant
  * operator views must additionally pass `requirePlatformAdmin` (below).
  */
+/**
+ * The signed-in user's id for activity logging (`recordEvent` actorUserId), or null
+ * when anonymous / stub mode. Never throws — observability must not break callers.
+ */
+export async function getActorUserId(): Promise<string | null> {
+  if (!isAuthConfigured()) return null;
+  try {
+    const session = await auth();
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requireSession(): Promise<void> {
   if (!isAuthConfigured()) return;
   let session: Session | null;

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { dbConnect, StoreModel, UserModel, SubscriptionModel, ThemeConfigModel } from "@/lib/db";
 import { emptyBillingSeam } from "@/lib/payments/billing";
+import { recordEvent } from "@/lib/data";
 
 /**
  * First-login provisioning (TODO Stage 7, PRD §7.1).
@@ -148,6 +149,23 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
   await UserModel.findByIdAndUpdate(userId, {
     activeStoreId: storeId,
     primaryStoreId: storeId,
+  });
+
+  // First-login audit trail (system actor — this runs inside the auth callback,
+  // which may lack request scope; recordEvent degrades gracefully).
+  await recordEvent({
+    type: "account.first_provision",
+    storeId,
+    actorUserId: userId,
+    actorType: "system",
+    target: { kind: "user", id: userId },
+  });
+  await recordEvent({
+    type: "store.created",
+    storeId,
+    actorUserId: userId,
+    actorType: "system",
+    target: { kind: "store", id: storeId },
   });
 
   return { userId, storeId, role: "merchant" };

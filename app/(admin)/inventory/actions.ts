@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { InventoryReason } from "@/types";
-import { adjustInventory } from "@/lib/data";
-import { requireMerchantStoreId } from "@/lib/auth";
+import { adjustInventory, recordEvent } from "@/lib/data";
+import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Inventory adjustment action (Stage 9, PRD §6.5). Applies a manual stock change
@@ -19,8 +19,22 @@ export async function adjustStock(input: {
   reason: InventoryReason;
 }): Promise<{ ok: boolean; resultingQuantity?: number }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const res = await adjustInventory(storeId, input);
   if (!res) return { ok: false };
+  await recordEvent({
+    type: "inventory.adjusted",
+    storeId,
+    actorUserId: await getActorUserId(),
+    target: { kind: "variant", id: input.variantId },
+    metadata: {
+      // A signed delta is only known for relative ("add") adjustments; a "set"
+      // logs its absolute target as resultingQuantity instead.
+      delta: input.mode === "add" ? input.amount : res.resultingQuantity,
+      reason: input.reason,
+      mode: input.mode,
+    },
+  });
   revalidatePath("/inventory");
   revalidatePath("/products");
   revalidatePath("/dashboard");

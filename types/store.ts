@@ -31,6 +31,16 @@ export interface StoreSettings {
   contactEmail: string;
   socialLinks?: { label: string; url: string }[];
   logoUrl?: string; // Cloudinary URL
+  /**
+   * Which settlement methods the storefront offers at checkout. High-risk verticals
+   * lean on cash-on-delivery / pay-in-store since card processors refuse the category.
+   * `online` reflects the (stubbed) processor path. Defaults applied in the data layer.
+   */
+  settlement?: {
+    online: boolean;
+    cod: boolean;
+    inStore: boolean;
+  };
 }
 
 export interface SeoDefaults {

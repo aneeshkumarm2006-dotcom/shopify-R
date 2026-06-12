@@ -35,6 +35,14 @@ const ProductOptionSchema = new Schema(
   { _id: false },
 );
 
+const ProductAttributeSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    value: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const ProductSchema = new Schema(
   {
     _id: stringId,
@@ -44,6 +52,10 @@ const ProductSchema = new Schema(
     images: { type: [String], default: [] }, // Cloudinary URLs
     status: { type: String, enum: ["active", "draft"], default: "draft" },
     handle: { type: String, required: true }, // unique per store (compound index below)
+    productType: { type: String, default: "" }, // browse/filter category
+    vendor: { type: String, default: "" }, // brand / cultivator
+    tags: { type: [String], default: [] }, // search + facets
+    attributes: { type: [ProductAttributeSchema], default: [] }, // THC %, strain, …
     seo: { type: Schema.Types.Mixed, default: () => ({}) },
     options: { type: [ProductOptionSchema], default: [] },
     variants: { type: [VariantSchema], default: [] },
@@ -53,6 +65,9 @@ const ProductSchema = new Schema(
 // Unique slug per tenant; storeId-leading so scoped reads use the index.
 ProductSchema.index({ storeId: 1, handle: 1 }, { unique: true });
 ProductSchema.index({ storeId: 1, status: 1 });
+// Facet filters (storefront browse): productType + tags, scoped per store.
+ProductSchema.index({ storeId: 1, productType: 1 });
+ProductSchema.index({ storeId: 1, tags: 1 });
 
 /* ============================================================
    5.5 collections (light, manual grouping)

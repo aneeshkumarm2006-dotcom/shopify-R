@@ -1,4 +1,4 @@
-import type { Address, OrderLineItem } from "@/types";
+import type { Address, OrderLineItem, SettlementMethod, Store } from "@/types";
 import { getProductsByIds } from "./products";
 import { findOrCreateCustomer, recordCustomerOrder } from "./customers";
 import { createOrder } from "./orders";
@@ -6,8 +6,19 @@ import { decrementInventory, type DecrementLine } from "./inventory";
 import { markCartConverted } from "./cart";
 import { getNextOrderNumber } from "./sequence";
 import { getStore } from "./store";
+import { validateDiscount, redeemDiscount } from "./discounts";
 import { createPaymentIntent } from "@/lib/payments";
 import { sendOrderConfirmation } from "@/lib/email";
+
+/** Settlement methods the store offers, keyed by `SettlementMethod`, with safe defaults. */
+export function enabledSettlements(store: Store): Record<SettlementMethod, boolean> {
+  const s = store.settings.settlement;
+  return {
+    online: s?.online ?? true,
+    cod: s?.cod ?? false,
+    in_store: s?.inStore ?? false,
+  };
+}
 
 /**
  * Checkout orchestration (Stage 10, PRD §6.6). One server-side entry point that
@@ -42,6 +53,10 @@ export interface CheckoutInput {
   /** ISO timestamp the customer passed the age gate (read from the gate cookie). */
   ageVerifiedAt: string;
   lines: CheckoutLine[];
+  /** Optional promo code — validated + applied SERVER-SIDE (never trust a client amount). */
+  discountCode?: string;
+  /** How the order settles; validated against the store's enabled methods. */
+  settlementMethod?: SettlementMethod;
   /** Anonymous session id, so the persisted cart can be marked converted. */
   sessionId?: string;
   /** Store display currency, carried into the payment seam (defaults to `$`). */
@@ -98,7 +113,32 @@ export async function placeOrder(
   }
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.price * l.quantity, 0);
-  const total = subtotal; // no tax/shipping engine in MVP (PRD §6.6)
+
+  // 1b. Load the store once — needed for settlement validation, currency, and the
+  //     confirmation email below. (No `getStore` round-trip is repeated at the end.)
+  const store = await getStore(storeId);
+
+  // 1c. Apply a promo code if supplied — validated + priced SERVER-SIDE so a tampered
+  //     client can't invent a discount. An invalid/expired code is silently ignored
+  //     (subtotal stands) rather than failing the whole checkout.
+  let discountAmount = 0;
+  let discountCode: string | null = null;
+  if (input.discountCode) {
+    const result = await validateDiscount(storeId, input.discountCode, subtotal);
+    if (result.ok) {
+      discountAmount = result.amount;
+      discountCode = result.code;
+    }
+  }
+  const total = Math.max(0, subtotal - discountAmount);
+
+  // 1d. Resolve + validate the settlement method against what the store offers.
+  //     COD / in-store keep the order `pending` (merchant marks paid on delivery);
+  //     `online` runs the (stubbed) processor seam below.
+  const settlementMethod: SettlementMethod = input.settlementMethod ?? "online";
+  if (store && !enabledSettlements(store)[settlementMethod]) {
+    throw new CheckoutError("That payment method isn't available for this store.");
+  }
 
   // 2. Match-or-create the customer by email within the store.
   const customer = await findOrCreateCustomer(storeId, {
@@ -111,15 +151,18 @@ export async function placeOrder(
   // 3. Atomic per-store order number.
   const orderNumber = await getNextOrderNumber(storeId);
 
-  // 3b. Payment seam (Stage 12, PRD §6.11). In the MVP no processor is wired, so
-  //     this returns null and the order settles offline as `pending`. A future
-  //     high-risk processor mints a real intent here — its id is stamped on the
-  //     order below and reconciled later via `/api/payments/webhook`.
-  const intent = await createPaymentIntent(storeId, {
-    amount: total,
-    currency: input.currency ?? "$",
-    customerEmail: input.contact.email,
-  });
+  // 3b. Payment seam (Stage 12, PRD §6.11). Only the `online` method touches the
+  //     processor; in the MVP it's stubbed and returns null, so the order settles
+  //     offline as `pending`. COD / in-store skip the seam entirely and stay pending
+  //     until the merchant marks them paid on delivery / at pickup.
+  const intent =
+    settlementMethod === "online"
+      ? await createPaymentIntent(storeId, {
+          amount: total,
+          currency: input.currency ?? "$",
+          customerEmail: input.contact.email,
+        })
+      : null;
 
   // 4. Persist the order (pending by default, with frozen snapshots + age stamp).
   const order = await createOrder(storeId, {
@@ -128,9 +171,12 @@ export async function placeOrder(
     customerId: customer._id,
     lineItems,
     subtotal,
+    discountAmount,
+    discountCode,
     total,
     shippingAddress: input.shippingAddress,
     contact: input.contact,
+    settlementMethod,
     paymentStatus: intent?.status ?? "pending",
     fulfillmentStatus: "unfulfilled",
     ageVerifiedAt: input.ageVerifiedAt,
@@ -144,6 +190,7 @@ export async function placeOrder(
       await decrementInventory(storeId, decrements, order._id);
     }
     await recordCustomerOrder(storeId, customer._id, total);
+    if (discountCode) await redeemDiscount(storeId, discountCode);
     if (input.sessionId) await markCartConverted(storeId, input.sessionId);
   } catch {
     /* order is already placed; post-steps are best-effort */
@@ -156,7 +203,6 @@ export async function placeOrder(
   //    freezes; it no-ops when Resend is unconfigured (`isEmailConfigured()`).
   //    The store is loaded here only for branding (name, subdomain, contact).
   try {
-    const store = await getStore(storeId);
     if (store) await sendOrderConfirmation(store, order);
   } catch {
     /* notification is best-effort; never blocks the placed order */

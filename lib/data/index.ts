@@ -17,6 +17,7 @@
 export * from "./store";
 export * from "./account";
 export * from "./products";
+export * from "./discounts";
 export * from "./collections";
 export * from "./inventory";
 export * from "./orders";
@@ -26,4 +27,6 @@ export * from "./analytics";
 export * from "./cart";
 export * from "./checkout";
 export * from "./platform";
+export * from "./health";
+export * from "./events";
 export * from "./sequence";

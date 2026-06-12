@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getThemeConfig } from "@/lib/data";
+import { getThemeConfig, enabledSettlements } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { CheckoutView, StoreFrame } from "@/components/storefront";
 
@@ -22,7 +22,7 @@ export default async function StoreCheckoutPage() {
 
   return (
     <StoreFrame config={config} storeName={store.name} footer={false}>
-      <CheckoutView />
+      <CheckoutView settlements={enabledSettlements(store)} />
     </StoreFrame>
   );
 }

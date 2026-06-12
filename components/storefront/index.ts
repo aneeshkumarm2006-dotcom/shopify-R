@@ -9,6 +9,8 @@ export { StoreLogo } from "./store-logo";
 export { AgeGate } from "./age-gate";
 export { ProductView } from "./product-view";
 export { CollectionView } from "./collection-view";
+export { SearchView } from "./search-view";
+export { ProductGrid } from "./product-grid";
 export { CartPage } from "./cart-page";
 export { CheckoutView } from "./checkout-view";
 export { ConfirmationView } from "./confirmation-view";

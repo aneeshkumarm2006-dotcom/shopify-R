@@ -17,3 +17,4 @@ export * from "./store";
 export * from "./catalog";
 export * from "./commerce";
 export * from "./views";
+export * from "./platform";

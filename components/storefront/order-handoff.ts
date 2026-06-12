@@ -10,6 +10,10 @@ export interface PlacedOrder {
   total: number;
   currency: string;
   items: { title: string; variant?: string; quantity: number; price: number }[];
+  /** Applied promo code + the amount it shaved off (display echo only). */
+  discount?: { code: string; amount: number };
+  /** How the customer chose to settle, for the confirmation echo. */
+  settlementMethod?: "online" | "cod" | "in_store";
 }
 
 const KEY = "offshelf_last_order";

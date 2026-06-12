@@ -13,6 +13,7 @@ import {
   CartModel,
   CollectionModel,
   CustomerModel,
+  DiscountModel,
   InventoryAdjustmentModel,
   OrderModel,
   ProductModel,
@@ -21,6 +22,7 @@ import type {
   Cart,
   Collection,
   Customer,
+  Discount,
   InventoryAdjustment,
   Order,
   Product,
@@ -44,3 +46,4 @@ export const InventoryAdjustments = new StoreScopedRepository<InventoryAdjustmen
 export const Orders = new StoreScopedRepository<Order>(OrderModel);
 export const Customers = new StoreScopedRepository<Customer>(CustomerModel);
 export const Carts = new StoreScopedRepository<Cart>(CartModel);
+export const Discounts = new StoreScopedRepository<Discount>(DiscountModel);

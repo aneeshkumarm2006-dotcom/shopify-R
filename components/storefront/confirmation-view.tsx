@@ -8,6 +8,13 @@ import { STORE_HOME } from "./shared";
 import { useStoreHref } from "./storefront-context";
 import { readOrder, type PlacedOrder } from "./order-handoff";
 
+/** Customer-facing labels for the settlement-method echo. */
+const SETTLEMENT_LABEL: Record<NonNullable<PlacedOrder["settlementMethod"]>, string> = {
+  online: "Pay online",
+  cod: "Cash on delivery",
+  in_store: "Pay in store",
+};
+
 /**
  * Order confirmation (DESIGN §5.4) — success state with the mono order number, a
  * summary echo, and a calm "what happens next" timeline (payment is arranged offline
@@ -91,12 +98,39 @@ export function ConfirmationView() {
             </div>
           ))}
           <hr className="divider" style={{ margin: "12px 0" }} />
+          {order.discount && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+                fontSize: "var(--text-base)",
+                color: "var(--accent-pressed)",
+              }}
+            >
+              <span>Discount · {order.discount.code}</span>
+              <span className="mono" style={{ whiteSpace: "nowrap" }}>
+                −{money(order.discount.amount, order.currency)}
+              </span>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ fontWeight: 600, color: "var(--warm-900)" }}>Total</span>
             <span className="mono" style={{ fontWeight: 600, color: "var(--warm-900)" }}>
               {money(order.total, order.currency)}
             </span>
           </div>
+          {order.settlementMethod && (
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: "var(--text-sm)",
+                color: "var(--warm-600)",
+              }}
+            >
+              Payment method: {SETTLEMENT_LABEL[order.settlementMethod]}
+            </div>
+          )}
         </div>
       )}
 

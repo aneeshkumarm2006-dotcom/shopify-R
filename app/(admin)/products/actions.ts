@@ -10,9 +10,10 @@ import {
   deleteProducts,
   duplicateProduct,
   setProductCollections,
+  recordEvent,
   type ProductInput,
 } from "@/lib/data";
-import { requireMerchantStoreId } from "@/lib/auth";
+import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Server actions backing the products admin (Stage 9, PRD §6.4). Each resolves
@@ -46,14 +47,27 @@ export async function saveProduct(
   collectionIds: string[] = [],
 ): Promise<SaveResult> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     let productId = id;
     if (id) {
       const updated = await updateProduct(storeId, id, input);
       if (!updated) return { ok: false, error: "Product not found." };
+      await recordEvent({
+        type: "product.updated",
+        storeId,
+        actorUserId: await getActorUserId(),
+        target: { kind: "product", id, label: input.title },
+      });
     } else {
       const created = await createProduct(storeId, input);
       productId = created._id;
+      await recordEvent({
+        type: "product.created",
+        storeId,
+        actorUserId: await getActorUserId(),
+        target: { kind: "product", id: created._id, label: input.title },
+      });
     }
     if (productId) await setProductCollections(storeId, productId, collectionIds);
     revalidateProducts(productId ?? undefined);
@@ -68,15 +82,31 @@ export async function saveProduct(
 
 export async function removeProduct(id: string): Promise<{ ok: boolean }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteProduct(storeId, id);
+  if (ok) {
+    await recordEvent({
+      type: "product.deleted",
+      storeId,
+      actorUserId: await getActorUserId(),
+      target: { kind: "product", id },
+    });
+  }
   revalidateProducts();
   return { ok };
 }
 
 export async function duplicateProductAction(id: string): Promise<SaveResult> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const copy = await duplicateProduct(storeId, id);
   if (!copy) return { ok: false, error: "Product not found." };
+  await recordEvent({
+    type: "product.created",
+    storeId,
+    actorUserId: await getActorUserId(),
+    target: { kind: "product", id: copy._id, label: copy.title },
+  });
   revalidateProducts(copy._id);
   return { ok: true, id: copy._id };
 }
@@ -86,14 +116,28 @@ export async function bulkSetStatusAction(
   status: ProductStatus,
 ): Promise<{ ok: boolean; count: number }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, count: 0 }; }
   const count = await setProductsStatus(storeId, ids, status);
+  await recordEvent({
+    type: "product.status_changed",
+    storeId,
+    actorUserId: await getActorUserId(),
+    metadata: { status, count },
+  });
   revalidateProducts();
   return { ok: true, count };
 }
 
 export async function bulkDeleteAction(ids: string[]): Promise<{ ok: boolean; count: number }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, count: 0 }; }
   const count = await deleteProducts(storeId, ids);
+  await recordEvent({
+    type: "product.deleted",
+    storeId,
+    actorUserId: await getActorUserId(),
+    metadata: { count },
+  });
   revalidateProducts();
   return { ok: true, count };
 }

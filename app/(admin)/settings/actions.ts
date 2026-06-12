@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { SubscriptionPlan } from "@/types";
-import { updateStore, setSubscriptionPlan, type StoreUpdate } from "@/lib/data";
-import { requireMerchantStoreId } from "@/lib/auth";
+import { updateStore, setSubscriptionPlan, recordEvent, type StoreUpdate } from "@/lib/data";
+import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Settings save action (Stage 9). Persists store details, the Cloudinary brand
@@ -14,8 +14,27 @@ export async function saveStoreSettings(
   update: StoreUpdate,
 ): Promise<{ ok: boolean }> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const saved = await updateStore(storeId, update);
   if (!saved) return { ok: false };
+  const actorUserId = await getActorUserId();
+  await recordEvent({
+    type: "settings.updated",
+    storeId,
+    actorUserId,
+    target: { kind: "store", id: storeId },
+  });
+  if (update.codeInjection) {
+    const ci = update.codeInjection;
+    const combined = `${ci.headHtml ?? ""}${ci.bodyHtml ?? ""}${ci.customJs ?? ""}`;
+    await recordEvent({
+      type: "settings.code_injection_changed",
+      storeId,
+      actorUserId,
+      target: { kind: "store", id: storeId },
+      metadata: { containsScript: /<script/i.test(combined) },
+    });
+  }
   revalidatePath("/settings");
   revalidatePath("/dashboard");
   return { ok: true };
@@ -30,8 +49,16 @@ export async function saveStoreSettings(
 export async function setPlanAction(plan: SubscriptionPlan): Promise<{ ok: boolean }> {
   if (plan !== "free" && plan !== "standard") return { ok: false };
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const updated = await setSubscriptionPlan(storeId, plan);
   if (!updated) return { ok: false };
+  await recordEvent({
+    type: "plan.changed",
+    storeId,
+    actorUserId: await getActorUserId(),
+    target: { kind: "store", id: storeId },
+    metadata: { plan },
+  });
   revalidatePath("/settings");
   revalidatePath("/", "layout");
   return { ok: true };

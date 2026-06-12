@@ -20,7 +20,8 @@ import {
   type StoreTemplateId,
 } from "@/lib/data/store-templates";
 import { saveThemeConfig } from "@/lib/data/theme";
-import { auth, signIn, signOut, isAuthConfigured, getMerchantContext } from "./index";
+import { recordEvent } from "@/lib/data";
+import { auth, signIn, signOut, isAuthConfigured, getMerchantContext, getActorUserId, assertNotImpersonating } from "./index";
 
 /**
  * Server actions backing the auth UI (sign-in, onboarding, sign-out). Each one
@@ -46,6 +47,9 @@ export async function doSignOut(): Promise<void> {
     const { redirect } = await import("next/navigation");
     redirect("/sign-in");
   }
+  // Clear any impersonation cookie so it can't outlive the session.
+  const { clearImpersonation } = await import("./impersonation");
+  await clearImpersonation();
   await signOut({ redirectTo: "/sign-in" });
 }
 
@@ -104,16 +108,33 @@ export async function claimSubdomain(
   const storeId = ctx?.storeId;
   if (!storeId) return { ok: false, reason: "invalid" }; // not signed in
 
+  try { await assertNotImpersonating(); } catch { return { ok: false, reason: "invalid" }; }
+
   await dbConnect();
   const clash = await StoreModel.findOne({ subdomain: value, _id: { $ne: storeId } }).lean();
   if (clash) return { ok: false, reason: "taken" };
 
+  // Give a freshly-created additional store a real name derived from its claimed
+  // address (e.g. `psk` → "Psk", `my-shop` → "My Shop") — but only while it still
+  // carries the placeholder name, so a merchant-set name is never overwritten.
+  const current = await StoreModel.findById(storeId).lean<{ name?: string } | null>();
+  const update: Record<string, unknown> = { subdomain: value };
+  if (current?.name === "New store") update.name = storeNameFromSubdomain(value);
+
   try {
-    await StoreModel.findByIdAndUpdate(storeId, { subdomain: value });
+    await StoreModel.findByIdAndUpdate(storeId, update);
   } catch {
     // Unique-index violation from a concurrent claim of the same address.
     return { ok: false, reason: "taken" };
   }
+
+  await recordEvent({
+    type: "subdomain.claimed",
+    storeId,
+    actorUserId: await getActorUserId(),
+    target: { kind: "store", id: storeId },
+    metadata: { subdomain: value },
+  });
 
   // Seed the builder from the chosen starting point. A tampered/unknown id (and
   // `blank`) keeps the empty config from provisioning. A failed seed must never
@@ -146,6 +167,7 @@ export async function setActiveStore(storeId: string): Promise<{ ok: boolean }> 
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false };
+  try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await setActiveStoreForUser(userId, storeId);
   if (ok) revalidatePath("/", "layout");
   return { ok };
@@ -170,6 +192,8 @@ export async function createStore(): Promise<CreateStoreResult> {
   const userId = session?.user?.id;
   if (!userId) return { ok: false, reason: "unauthenticated" };
 
+  try { await assertNotImpersonating(); } catch { return { ok: false, reason: "unauthenticated" }; }
+
   const status = await getStoreCapStatus(userId);
   if (status.atCap) {
     return {
@@ -186,6 +210,22 @@ export async function createStore(): Promise<CreateStoreResult> {
     contactEmail: session?.user?.email ?? "",
   });
   await setActiveStoreForUser(userId, storeId);
+  await recordEvent({
+    type: "store.created",
+    storeId,
+    actorUserId: userId,
+    target: { kind: "store", id: storeId },
+  });
   revalidatePath("/", "layout");
   return { ok: true, storeId };
+}
+
+/** Title-case a subdomain into a friendly store name: `my-shop` → "My Shop". */
+function storeNameFromSubdomain(sub: string): string {
+  const name = sub
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return name || "New store";
 }

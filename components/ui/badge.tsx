@@ -33,6 +33,7 @@ export const PAYMENT_TONE: Record<string, PillTone> = {
 
 export const FULFILLMENT_TONE: Record<string, PillTone> = {
   unfulfilled: "muted",
+  partially_fulfilled: "warning",
   fulfilled: "success",
   cancelled: "critical",
 };

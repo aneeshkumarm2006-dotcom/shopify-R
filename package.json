@@ -14,7 +14,7 @@
     "seed": "tsx scripts/seed.ts",
     "migrate:multistore": "tsx scripts/migrate-multistore.ts",
     "db:check": "tsx scripts/check-counter.ts",
-    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/subdomain.test.ts tests/sanitize.test.ts tests/store-templates.test.ts tests/store-cap.test.ts"
+    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/tenant-isolation-adversarial.test.ts tests/subdomain.test.ts tests/subdomain-sanitize-depth.test.ts tests/sanitize.test.ts tests/store-templates.test.ts tests/store-cap.test.ts tests/account-multistore.test.ts tests/discount.test.ts tests/discount-edge.test.ts tests/settlement.test.ts tests/checkout.test.ts tests/fulfillment.test.ts tests/catalog-search.test.ts tests/health-engine.test.ts"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

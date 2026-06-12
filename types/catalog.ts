@@ -35,6 +35,16 @@ export interface ProductSeo {
   description?: string; // overrides store seoDefaults
 }
 
+/**
+ * A structured custom attribute — the niche merchandising data Shopify needs an app
+ * for (e.g. THC %, strain, dosage, terpenes). Free-form name/value so merchants in
+ * any vertical can describe their catalog; rendered on the PDP and usable as facets.
+ */
+export interface ProductAttribute {
+  name: string; // e.g. "THC", "Strain"
+  value: string; // e.g. "24%", "Sativa"
+}
+
 export interface Product extends Timestamps {
   _id: Id;
   storeId: Id;
@@ -43,6 +53,14 @@ export interface Product extends Timestamps {
   images: string[]; // Cloudinary URLs
   status: ProductStatus;
   handle: string; // URL slug, unique per store
+  /** Single product category for browse/filter (e.g. "Flower", "Edibles"). */
+  productType?: string;
+  /** Brand / cultivator. */
+  vendor?: string;
+  /** Free-form labels for search + faceting. */
+  tags?: string[];
+  /** Structured custom attributes (THC %, strain, …) — display + facets. */
+  attributes?: ProductAttribute[];
   seo: ProductSeo;
   options: ProductOption[]; // optional
   variants: Variant[];

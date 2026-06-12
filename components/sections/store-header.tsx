@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import type { Section } from "@/types";
@@ -115,9 +116,7 @@ export function StoreHeader({
         </nav>
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-          {s.showSearch !== false && (
-            <IconButton name="search" size={36} aria-label="Search" disabled={preview} />
-          )}
+          {s.showSearch !== false && <HeaderSearch preview={preview} />}
           {s.showCart !== false && (
             <button
               type="button"
@@ -155,6 +154,102 @@ export function StoreHeader({
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Header search affordance — an accessible expanding input. Collapsed, it's a search
+ * icon button; activating it reveals a labelled text field that submits on Enter,
+ * navigating to the tenant's `/search?q=…` (via the store-href helper, so the
+ * `/s/<subdomain>` prefix is applied). Inert in builder `preview`.
+ */
+function HeaderSearch({ preview }: { preview: boolean }) {
+  const href = useStoreHref();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  if (preview) {
+    return <IconButton name="search" size={36} aria-label="Search" disabled />;
+  }
+
+  if (!open) {
+    return (
+      <IconButton
+        name="search"
+        size={36}
+        aria-label="Search"
+        aria-expanded={false}
+        onClick={() => setOpen(true)}
+      />
+    );
+  }
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = value.trim();
+    setOpen(false);
+    router.push(href(`/search${q ? `?q=${encodeURIComponent(q)}` : ""}`));
+  };
+
+  return (
+    <form
+      role="search"
+      onSubmit={submit}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        border: "1px solid var(--border-strong)",
+        borderRadius: 999,
+        padding: "2px 4px 2px 12px",
+        background: "var(--surface)",
+      }}
+    >
+      <label
+        htmlFor="store-search"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          clip: "rect(0 0 0 0)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Search products
+      </label>
+      <input
+        id="store-search"
+        ref={inputRef}
+        type="search"
+        name="q"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          if (!value.trim()) setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="Search products"
+        autoComplete="off"
+        style={{
+          border: "none",
+          outline: "none",
+          background: "transparent",
+          fontSize: "var(--text-sm)",
+          color: "var(--warm-900)",
+          width: 160,
+        }}
+      />
+      <IconButton name="search" size={28} aria-label="Submit search" type="submit" />
+    </form>
   );
 }
 

@@ -1,8 +1,8 @@
 "use server";
 
 import { cookies } from "next/headers";
-import type { Address, CartItem } from "@/types";
-import { placeOrder, saveCart, CheckoutError } from "@/lib/data";
+import type { Address, CartItem, SettlementMethod } from "@/types";
+import { placeOrder, saveCart, validateDiscount, CheckoutError } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 
 /**
@@ -27,6 +27,10 @@ interface SubmitOrderInput {
   phone?: string;
   sessionId?: string;
   lines: { productId: string; variantId: string; quantity: number }[];
+  /** Promo code typed at checkout. Re-validated server-side by `placeOrder`. */
+  discountCode?: string;
+  /** How the customer settles — re-checked against the store's enabled methods. */
+  settlementMethod?: SettlementMethod;
 }
 
 export interface SubmitOrderResult {
@@ -62,12 +66,34 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
       lines: input.lines,
       currency: store.settings.currency,
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.discountCode?.trim() ? { discountCode: input.discountCode.trim() } : {}),
+      ...(input.settlementMethod ? { settlementMethod: input.settlementMethod } : {}),
     });
     return { ok: true, orderNumber: placed.orderNumber, total: placed.total };
   } catch (err) {
     if (err instanceof CheckoutError) return { ok: false, error: err.message };
     return { ok: false, error: "We couldn't place your order. Please try again." };
   }
+}
+
+/**
+ * Validate a promo code against the live cart subtotal for the resolved tenant
+ * (PRD §6.6). Returns a serializable preview the checkout UI can DISPLAY — the
+ * authoritative discount is re-validated inside `placeOrder`, so a tampered amount
+ * here can never change what the customer is actually charged. The rejection
+ * `reason` is passed back raw; the client maps it to friendly copy.
+ */
+export async function applyDiscount(
+  code: string,
+  subtotal: number,
+): Promise<{ ok: boolean; amount?: number; code?: string; reason?: string }> {
+  const store = await resolveStorefront();
+  if (!store) return { ok: false, reason: "not_found" };
+  if (!code.trim()) return { ok: false, reason: "not_found" };
+
+  const result = await validateDiscount(store._id, code, subtotal);
+  if (result.ok) return { ok: true, amount: result.amount, code: result.code };
+  return { ok: false, reason: result.reason };
 }
 
 /**

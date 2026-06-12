@@ -39,6 +39,97 @@ export async function getProductByHandle(
   return Products.findOne(storeId, { handle });
 }
 
+export type ProductSort = "newest" | "price_asc" | "price_desc" | "title";
+
+export interface ProductQuery {
+  /** Free-text — matches title, tags, type, or vendor (case-insensitive). */
+  q?: string;
+  /** Exact tag facet. */
+  tag?: string;
+  /** Exact product-type facet. */
+  productType?: string;
+  status?: ProductStatus;
+  sort?: ProductSort;
+}
+
+/** Lowest variant price — the figure browse pages sort/display "from". */
+export function minVariantPrice(p: Product): number {
+  return p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : 0;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sortProducts(rows: Product[], sort?: ProductSort): Product[] {
+  const out = [...rows];
+  switch (sort) {
+    case "price_asc":
+      return out.sort((a, b) => minVariantPrice(a) - minVariantPrice(b));
+    case "price_desc":
+      return out.sort((a, b) => minVariantPrice(b) - minVariantPrice(a));
+    case "title":
+      return out.sort((a, b) => a.title.localeCompare(b.title));
+    case "newest":
+    default:
+      return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+}
+
+/**
+ * Search + facet-filter products (storefront browse / `/search`). Matches `q` across
+ * title/tags/type/vendor and narrows by exact `tag` / `productType`. Pass
+ * `status: "active"` for storefront use so drafts never surface.
+ */
+export async function searchProducts(storeId: string, query: ProductQuery): Promise<Product[]> {
+  const q = query.q?.trim();
+
+  if (!isDbConfigured()) {
+    let rows = scoped(mockProducts, storeId);
+    if (query.status) rows = rows.filter((p) => p.status === query.status);
+    if (query.productType) rows = rows.filter((p) => p.productType === query.productType);
+    if (query.tag) rows = rows.filter((p) => (p.tags ?? []).includes(query.tag!));
+    if (q) {
+      const needle = q.toLowerCase();
+      rows = rows.filter((p) =>
+        [p.title, p.productType ?? "", p.vendor ?? "", ...(p.tags ?? [])]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
+      );
+    }
+    return resolve(sortProducts(rows, query.sort));
+  }
+
+  const filter: Record<string, unknown> = {};
+  if (query.status) filter.status = query.status;
+  if (query.productType) filter.productType = query.productType;
+  if (query.tag) filter.tags = query.tag;
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), "i");
+    filter.$or = [{ title: rx }, { tags: rx }, { productType: rx }, { vendor: rx }];
+  }
+  const rows = await Products.findMany(storeId, filter);
+  return sortProducts(rows, query.sort);
+}
+
+/** Distinct active-product facets for the storefront filter UI (types + tags). */
+export async function getProductFacets(
+  storeId: string,
+): Promise<{ productTypes: string[]; tags: string[] }> {
+  const rows = await getProducts(storeId, { status: "active" });
+  const types = new Set<string>();
+  const tags = new Set<string>();
+  for (const p of rows) {
+    if (p.productType) types.add(p.productType);
+    for (const t of p.tags ?? []) if (t) tags.add(t);
+  }
+  return {
+    productTypes: [...types].sort((a, b) => a.localeCompare(b)),
+    tags: [...tags].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
 /** Resolve an ordered list of products by id (e.g. a featured_products section). */
 export async function getProductsByIds(storeId: string, ids: string[]): Promise<Product[]> {
   if (!isDbConfigured()) {
@@ -140,6 +231,10 @@ export async function duplicateProduct(storeId: string, id: string): Promise<Pro
     images: [...source.images],
     status: "draft",
     handle: await uniqueHandle(storeId, `${source.handle}-copy`),
+    productType: source.productType ?? "",
+    vendor: source.vendor ?? "",
+    tags: [...(source.tags ?? [])],
+    attributes: (source.attributes ?? []).map((a) => ({ ...a })),
     seo: { ...source.seo },
     options: source.options.map((o) => ({ ...o, values: [...o.values] })),
     variants: source.variants.map((v, i) => freshVariant(v, i)),

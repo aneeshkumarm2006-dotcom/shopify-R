@@ -46,6 +46,24 @@ const OrderLineItemSchema = new Schema(
     sku: { type: String, default: "" },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
+    fulfilledQuantity: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const FulfillmentLineSchema = new Schema(
+  { lineIndex: { type: Number, required: true }, quantity: { type: Number, required: true } },
+  { _id: false },
+);
+
+const FulfillmentSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    lines: { type: [FulfillmentLineSchema], default: [] },
+    trackingNumber: { type: String, default: "" },
+    carrier: { type: String, default: "" },
+    trackingUrl: { type: String, default: "" },
+    createdAt: { type: Date, required: true },
   },
   { _id: false },
 );
@@ -58,15 +76,23 @@ const OrderSchema = new Schema(
     customerId: { type: String, required: true },
     lineItems: { type: [OrderLineItemSchema], default: [] },
     subtotal: { type: Number, required: true },
+    discountAmount: { type: Number, default: 0 },
+    discountCode: { type: String, default: null },
     total: { type: Number, required: true },
     shippingAddress: { type: AddressSchema, required: true },
     contact: { type: AddressSchema, required: true },
+    settlementMethod: {
+      type: String,
+      enum: ["online", "cod", "in_store"],
+      default: "online",
+    },
     paymentStatus: { type: String, enum: ["pending", "paid", "refunded"], default: "pending" },
     fulfillmentStatus: {
       type: String,
-      enum: ["unfulfilled", "fulfilled", "cancelled"],
+      enum: ["unfulfilled", "partially_fulfilled", "fulfilled", "cancelled"],
       default: "unfulfilled",
     },
+    fulfillments: { type: [FulfillmentSchema], default: [] },
     ageVerifiedAt: { type: Date, required: true },
     paymentIntent: { type: String, default: null }, // reserved seam (PRD §6.11)
   },
@@ -93,6 +119,28 @@ const CustomerSchema = new Schema(
 );
 CustomerSchema.index({ storeId: 1, email: 1 }, { unique: true });
 
+/* ============================================================
+   Discounts (promo codes) — scoped per store; code unique per store
+   ============================================================ */
+const DiscountSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true },
+    code: { type: String, required: true, uppercase: true, trim: true },
+    type: { type: String, enum: ["percentage", "fixed"], required: true },
+    value: { type: Number, required: true },
+    minSubtotal: { type: Number, default: 0 },
+    usageLimit: { type: Number, default: null },
+    usedCount: { type: Number, default: 0 },
+    startsAt: { type: Date, default: null },
+    endsAt: { type: Date, default: null },
+    status: { type: String, enum: ["active", "disabled"], default: "active" },
+  },
+  baseSchemaOptions,
+);
+DiscountSchema.index({ storeId: 1, code: 1 }, { unique: true });
+
 export const CartModel = defineModel("Cart", CartSchema);
 export const OrderModel = defineModel("Order", OrderSchema);
 export const CustomerModel = defineModel("Customer", CustomerSchema);
+export const DiscountModel = defineModel("Discount", DiscountSchema);

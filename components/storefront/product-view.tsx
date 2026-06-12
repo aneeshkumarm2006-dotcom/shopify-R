@@ -93,7 +93,7 @@ export function ProductView({ product, currency = "$" }: { product: Product; cur
               marginBottom: 10,
             }}
           >
-            {productType(product)}
+            {product.productType || productType(product)}
           </div>
           <h1
             style={{
@@ -204,8 +204,13 @@ export function ProductView({ product, currency = "$" }: { product: Product; cur
             <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginTop: 20 }}>
               {[
                 ["SKU", variant?.sku ?? "—"],
-                ["Type", productType(product)],
-                ["Lab-tested", "Yes"],
+                ["Type", product.productType || productType(product)],
+                ...(product.vendor ? [["Brand", product.vendor] as [string, string]] : []),
+                // Merchant-defined structured attributes (THC %, strain, dosage, …)
+                // surface here as part of the spec list when present.
+                ...(product.attributes ?? []).map(
+                  (a) => [a.name, a.value] as [string, string],
+                ),
               ].map(([k, val]) => (
                 <div key={k}>
                   <div

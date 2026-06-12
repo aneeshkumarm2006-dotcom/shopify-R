@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { StoreStatus } from "@/types";
-import { publishStore, unpublishStore, PublishError } from "@/lib/data";
-import { requireMerchantStoreId } from "@/lib/auth";
+import { publishStore, unpublishStore, PublishError, recordEvent } from "@/lib/data";
+import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Publish / unpublish actions (Stage 11, PRD §6.10). The `storeId` is resolved from
@@ -27,8 +27,15 @@ function revalidateStatusSurfaces() {
 
 export async function publishStoreAction(): Promise<PublishResult> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const store = await publishStore(storeId);
+    await recordEvent({
+      type: "store.published",
+      storeId,
+      actorUserId: await getActorUserId(),
+      target: { kind: "store", id: storeId },
+    });
     revalidateStatusSurfaces();
     return { ok: true, status: store.status };
   } catch (err) {
@@ -39,8 +46,15 @@ export async function publishStoreAction(): Promise<PublishResult> {
 
 export async function unpublishStoreAction(): Promise<PublishResult> {
   const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const store = await unpublishStore(storeId);
+    await recordEvent({
+      type: "store.unpublished",
+      storeId,
+      actorUserId: await getActorUserId(),
+      target: { kind: "store", id: storeId },
+    });
     revalidateStatusSurfaces();
     return { ok: true, status: store.status };
   } catch (err) {

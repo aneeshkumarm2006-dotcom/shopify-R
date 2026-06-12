@@ -78,6 +78,13 @@ export function Settings({
   // Code injection
   const [code, setCode] = useState(store.codeInjection);
 
+  // Checkout & payment methods — defaults when `settlement` is absent: online on,
+  // cod/in-store off (mirrors the data layer's `enabledSettlements` fallback).
+  const settlement = store.settings.settlement;
+  const [payOnline, setPayOnline] = useState(settlement?.online ?? true);
+  const [payCod, setPayCod] = useState(settlement?.cod ?? false);
+  const [payInStore, setPayInStore] = useState(settlement?.inStore ?? false);
+
   // Age gate
   const [ageOn, setAgeOn] = useState(store.ageGate.enabled);
   const [ageMessage, setAgeMessage] = useState(store.ageGate.message);
@@ -105,7 +112,12 @@ export function Settings({
     startTransition(async () => {
       const res = await saveStoreSettings({
         name,
-        settings: { contactEmail, currency, logoUrl: logo[0] ?? "" },
+        settings: {
+          contactEmail,
+          currency,
+          logoUrl: logo[0] ?? "",
+          settlement: { online: payOnline, cod: payCod, inStore: payInStore },
+        },
         seoDefaults: { title: seoTitle, description: seoDesc },
         codeInjection: code,
         ageGate: { enabled: ageOn, message: ageMessage },
@@ -206,6 +218,51 @@ export function Settings({
               hint="Drop your logo or click to upload"
             />
           </Field>
+        </Card>
+
+        {/* Checkout & payment methods */}
+        <Card title="Checkout & payment methods">
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-4)",
+            }}
+          >
+            High-risk verticals often rely on cash-on-delivery since card processors refuse
+            the category.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            <SettlementRow
+              title="Online payment"
+              body="Card / processor checkout (stubbed in the MVP)."
+              checked={payOnline}
+              onChange={(next) => {
+                setPayOnline(next);
+                mark();
+              }}
+            />
+            <hr className="divider" />
+            <SettlementRow
+              title="Cash on delivery"
+              body="Shoppers pay the courier when the order arrives."
+              checked={payCod}
+              onChange={(next) => {
+                setPayCod(next);
+                mark();
+              }}
+            />
+            <hr className="divider" />
+            <SettlementRow
+              title="Pay in store"
+              body="Shoppers settle on pickup at a physical location."
+              checked={payInStore}
+              onChange={(next) => {
+                setPayInStore(next);
+                mark();
+              }}
+            />
+          </div>
         </Card>
 
         {/* Domain */}
@@ -625,6 +682,43 @@ export function Settings({
           cannot be undone.
         </p>
       </Modal>
+    </div>
+  );
+}
+
+function SettlementRow({
+  title,
+  body,
+  checked,
+  onChange,
+}: {
+  title: string;
+  body: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--space-4)",
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontWeight: 500,
+            color: "var(--text-strong)",
+            fontSize: "var(--text-sm)",
+          }}
+        >
+          {title}
+        </div>
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{body}</div>
+      </div>
+      <Switch checked={checked} onChange={onChange} aria-label={title} />
     </div>
   );
 }

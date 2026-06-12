@@ -67,13 +67,15 @@ const NAV: NavItem[] = [
   { label: "Products", icon: "products", href: "/products" },
   { label: "Inventory", icon: "inventory", href: "/inventory" },
   { label: "Customers", icon: "customers", href: "/customers" },
+  { label: "Discounts", icon: "tag", href: "/discounts" },
   { label: "Online Store", icon: "store", href: "/builder" },
   { label: "Analytics", icon: "analytics", href: "/analytics" },
   { label: "Settings", icon: "settings", href: "/settings" },
 ];
 
-/** Routes that render without the admin chrome. */
-const BARE_PREFIXES = ["/sign-in", "/onboarding", "/_kitchen-sink", "/builder"];
+/** Routes that render without the merchant admin chrome (auth, builder, and the
+ *  platform operator portal, which has its own super-admin shell). */
+const BARE_PREFIXES = ["/sign-in", "/onboarding", "/_kitchen-sink", "/builder", "/platform"];
 
 function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");

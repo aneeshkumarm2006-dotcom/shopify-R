@@ -12,6 +12,7 @@ import {
 } from "@/lib/data";
 import { getMerchantContext } from "@/lib/auth";
 import { AdminChrome } from "@/components/admin/admin-chrome";
+import { ImpersonationBanner } from "@/components/admin/impersonation-banner";
 
 /**
  * Admin route-group layout (DESIGN §4.1). Resolves the *signed-in* merchant's
@@ -52,20 +53,23 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const outCount = lowStock.filter((r) => r.status === "out").length;
 
   return (
-    <AdminChrome
-      store={store}
-      owner={owner}
-      subscription={subscription}
-      stores={stores}
-      capStatus={capStatus}
-      products={products}
-      orders={orders}
-      customers={customers}
-      unfulfilledCount={unfulfilledCount}
-      lowCount={lowCount}
-      outCount={outCount}
-    >
-      {children}
-    </AdminChrome>
+    <>
+      {ctx.impersonating && <ImpersonationBanner storeName={store.name} />}
+      <AdminChrome
+        store={store}
+        owner={owner}
+        subscription={subscription}
+        stores={stores}
+        capStatus={capStatus}
+        products={products}
+        orders={orders}
+        customers={customers}
+        unfulfilledCount={unfulfilledCount}
+        lowCount={lowCount}
+        outCount={outCount}
+      >
+        {children}
+      </AdminChrome>
+    </>
   );
 }

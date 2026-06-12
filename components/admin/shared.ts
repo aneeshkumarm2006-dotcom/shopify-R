@@ -32,6 +32,7 @@ export const PAYMENT_LABEL: Record<PaymentStatus, string> = {
 
 export const FULFILLMENT_LABEL: Record<FulfillmentStatus, string> = {
   unfulfilled: "Unfulfilled",
+  partially_fulfilled: "Partially fulfilled",
   fulfilled: "Fulfilled",
   cancelled: "Cancelled",
 };

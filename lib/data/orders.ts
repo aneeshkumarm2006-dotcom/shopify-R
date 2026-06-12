@@ -1,4 +1,11 @@
-import type { FulfillmentStatus, Order, PaymentStatus } from "@/types";
+import type {
+  Fulfillment,
+  FulfillmentLine,
+  FulfillmentStatus,
+  Order,
+  OrderLineItem,
+  PaymentStatus,
+} from "@/types";
 import { mockOrders } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Orders } from "@/lib/db";
@@ -103,4 +110,96 @@ export async function setOrderPaymentStatusByIntent(
     return resolve({ ...found, paymentStatus, updatedAt: new Date().toISOString() });
   }
   return Orders.updateOne(storeId, { paymentIntent }, { $set: { paymentStatus } });
+}
+
+/* ============================================================
+   Fulfillment (Phase 3) — line-item/partial shipments + tracking.
+   ============================================================ */
+
+export interface FulfillInput {
+  /** Which lines (by index into `order.lineItems`) and how many of each to ship. */
+  lines: { lineIndex: number; quantity: number }[];
+  trackingNumber?: string;
+  carrier?: string;
+  trackingUrl?: string;
+}
+
+export class FulfillmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FulfillmentError";
+  }
+}
+
+/** Derive the order's rollup status from per-line fulfilled quantities. */
+function rollupFulfillment(lineItems: OrderLineItem[]): FulfillmentStatus {
+  const total = lineItems.reduce((s, li) => s + li.quantity, 0);
+  const done = lineItems.reduce((s, li) => s + (li.fulfilledQuantity ?? 0), 0);
+  if (done <= 0) return "unfulfilled";
+  if (done >= total) return "fulfilled";
+  return "partially_fulfilled";
+}
+
+/**
+ * Record a shipment against an order (PRD §6.7, Phase 3). Adds the requested
+ * quantities to each line's `fulfilledQuantity` (clamped to what remains), appends a
+ * `fulfillment` record carrying optional tracking, and recomputes the rollup
+ * fulfillment status. Tenant-scoped via the `Orders` repo. Throws `FulfillmentError`
+ * when the order is cancelled or nothing shippable was requested.
+ */
+export async function createFulfillment(
+  storeId: string,
+  orderId: string,
+  input: FulfillInput,
+): Promise<Order | null> {
+  const order = await getOrder(storeId, orderId);
+  if (!order) return null;
+  if (order.fulfillmentStatus === "cancelled") {
+    throw new FulfillmentError("This order is cancelled.");
+  }
+
+  const lineItems: OrderLineItem[] = order.lineItems.map((li) => ({
+    ...li,
+    fulfilledQuantity: li.fulfilledQuantity ?? 0,
+  }));
+
+  const recordLines: FulfillmentLine[] = [];
+  for (const req of input.lines) {
+    const li = lineItems[req.lineIndex];
+    if (!li) continue;
+    const remaining = li.quantity - (li.fulfilledQuantity ?? 0);
+    const qty = Math.max(0, Math.min(Math.floor(req.quantity), remaining));
+    if (qty <= 0) continue;
+    li.fulfilledQuantity = (li.fulfilledQuantity ?? 0) + qty;
+    recordLines.push({ lineIndex: req.lineIndex, quantity: qty });
+  }
+  if (recordLines.length === 0) {
+    throw new FulfillmentError("Nothing left to fulfill on this order.");
+  }
+
+  const fulfillment: Fulfillment = {
+    id: `f_${Math.random().toString(36).slice(2, 10)}`,
+    lines: recordLines,
+    ...(input.trackingNumber?.trim() ? { trackingNumber: input.trackingNumber.trim() } : {}),
+    ...(input.carrier?.trim() ? { carrier: input.carrier.trim() } : {}),
+    ...(input.trackingUrl?.trim() ? { trackingUrl: input.trackingUrl.trim() } : {}),
+    createdAt: new Date().toISOString(),
+  };
+  const fulfillments = [...(order.fulfillments ?? []), fulfillment];
+  const fulfillmentStatus = rollupFulfillment(lineItems);
+
+  if (!isDbConfigured()) {
+    return resolve({
+      ...order,
+      lineItems,
+      fulfillments,
+      fulfillmentStatus,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  return Orders.updateOne(
+    storeId,
+    { _id: orderId },
+    { $set: { lineItems, fulfillments, fulfillmentStatus } },
+  );
 }

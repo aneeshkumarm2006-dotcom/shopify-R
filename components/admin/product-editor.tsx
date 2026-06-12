@@ -6,6 +6,7 @@ import type {
   Collection,
   InventoryPolicy,
   Product,
+  ProductAttribute,
   ProductInput,
   ProductOption,
   ProductStatus,
@@ -159,6 +160,15 @@ export function ProductEditor({
   const [seoTitle, setSeoTitle] = useState(product?.seo.title ?? "");
   const [seoDesc, setSeoDesc] = useState(product?.seo.description ?? "");
 
+  /* ---- taxonomy ---- */
+  const [productType, setProductType] = useState(product?.productType ?? "");
+  const [vendor, setVendor] = useState(product?.vendor ?? "");
+  const [tags, setTags] = useState<string[]>(product?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState("");
+  const [attributes, setAttributes] = useState<ProductAttribute[]>(
+    product?.attributes ?? [],
+  );
+
   const mark = () => setDirty(true);
   const statusPill = productStatusPill(status);
   const previewBase = `${storeDomain(storeSubdomain)}/products/`;
@@ -206,6 +216,44 @@ export function ProductEditor({
     mark();
   }
 
+  /* ---- tags ---- */
+  function addTag(raw: string) {
+    const value = raw.trim();
+    if (!value) return;
+    if (!tags.some((t) => t.toLowerCase() === value.toLowerCase())) {
+      setTags((t) => [...t, value]);
+      mark();
+    }
+    setTagDraft("");
+  }
+  function removeTag(tag: string) {
+    setTags((t) => t.filter((x) => x !== tag));
+    mark();
+  }
+  function onTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(tagDraft);
+    } else if (e.key === "Backspace" && tagDraft === "" && tags.length > 0) {
+      const last = tags[tags.length - 1];
+      if (last) removeTag(last);
+    }
+  }
+
+  /* ---- attributes ---- */
+  function addAttribute() {
+    setAttributes((a) => [...a, { name: "", value: "" }]);
+    mark();
+  }
+  function setAttribute(i: number, patch: Partial<ProductAttribute>) {
+    setAttributes((a) => a.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+    mark();
+  }
+  function removeAttribute(i: number) {
+    setAttributes((a) => a.filter((_, j) => j !== i));
+    mark();
+  }
+
   /* ---- build + persist ---- */
   function buildInput(): ProductInput {
     const cleanOptions = options
@@ -225,12 +273,24 @@ export function ProductEditor({
         trackInventory: v.track,
       },
     }));
+    const cleanAttributes = attributes
+      .map((a) => ({ name: a.name.trim(), value: a.value.trim() }))
+      .filter((a) => a.name);
+    const cleanTags = tags.map((t) => t.trim()).filter(Boolean);
+    const pendingTag = tagDraft.trim();
+    if (pendingTag && !cleanTags.some((t) => t.toLowerCase() === pendingTag.toLowerCase())) {
+      cleanTags.push(pendingTag);
+    }
     return {
       title: title.trim(),
       description,
       images,
       status,
       handle: handle.trim(),
+      ...(productType.trim() ? { productType: productType.trim() } : {}),
+      ...(vendor.trim() ? { vendor: vendor.trim() } : {}),
+      ...(cleanTags.length ? { tags: cleanTags } : {}),
+      ...(cleanAttributes.length ? { attributes: cleanAttributes } : {}),
       seo: {
         ...(seoTitle.trim() ? { title: seoTitle.trim() } : {}),
         ...(seoDesc.trim() ? { description: seoDesc.trim() } : {}),
@@ -777,7 +837,158 @@ export function ProductEditor({
                   )}
                 </div>
               </Field>
+
+              <Field label="Product type" help="A single category for browse/filter.">
+                {(p) => (
+                  <Input
+                    {...p}
+                    value={productType}
+                    onChange={(e) => {
+                      setProductType(e.target.value);
+                      mark();
+                    }}
+                    placeholder="e.g. Flower, Edibles"
+                  />
+                )}
+              </Field>
+
+              <Field label="Vendor / brand">
+                {(p) => (
+                  <Input
+                    {...p}
+                    value={vendor}
+                    onChange={(e) => {
+                      setVendor(e.target.value);
+                      mark();
+                    }}
+                    placeholder="e.g. House Brand"
+                  />
+                )}
+              </Field>
+
+              <Field label="Tags" help="Press Enter or comma to add. Click a tag to remove.">
+                {(p) => (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 6,
+                      minHeight: 36,
+                      padding: tags.length ? "5px 6px" : "0 8px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "var(--surface)",
+                    }}
+                  >
+                    {tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => removeTag(tag)}
+                        aria-label={`Remove tag ${tag}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: "var(--text-xs)",
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "none",
+                          cursor: "pointer",
+                          background: "var(--surface-sunken)",
+                          color: "var(--text-strong)",
+                        }}
+                      >
+                        {tag}
+                        <Icon name="x" size={12} aria-hidden />
+                      </button>
+                    ))}
+                    <input
+                      {...p}
+                      value={tagDraft}
+                      onChange={(e) => setTagDraft(e.target.value)}
+                      onKeyDown={onTagKeyDown}
+                      onBlur={() => addTag(tagDraft)}
+                      placeholder={tags.length ? "" : "Add a tag…"}
+                      aria-label="Add a tag"
+                      style={{
+                        flex: 1,
+                        minWidth: 80,
+                        border: "none",
+                        outline: "none",
+                        background: "transparent",
+                        height: 26,
+                        fontSize: "var(--text-sm)",
+                        color: "var(--text-strong)",
+                      }}
+                    />
+                  </div>
+                )}
+              </Field>
             </div>
+          </Card>
+
+          <Card>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              <Eyebrow>Attributes</Eyebrow>
+              <Button size="sm" variant="default" icon="plus" onClick={addAttribute}>
+                Add
+              </Button>
+            </div>
+            {attributes.length === 0 ? (
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                Add structured details like THC %, strain, or dosage.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-3)",
+                }}
+              >
+                {attributes.map((a, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 32px",
+                      gap: "var(--space-3)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Input
+                      value={a.name}
+                      onChange={(e) => setAttribute(i, { name: e.target.value })}
+                      placeholder="THC"
+                      style={{ height: 34 }}
+                      aria-label={`Attribute ${i + 1} name`}
+                    />
+                    <Input
+                      value={a.value}
+                      onChange={(e) => setAttribute(i, { value: e.target.value })}
+                      placeholder="24%"
+                      style={{ height: 34 }}
+                      aria-label={`Attribute ${i + 1} value`}
+                    />
+                    <IconButton
+                      name="trash"
+                      size={32}
+                      aria-label={`Remove attribute ${i + 1}`}
+                      onClick={() => removeAttribute(i)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card>

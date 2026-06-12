@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { PlatformStoreSummary, StoreStatus, SubscriptionPlan } from "@/types";
 import { setStoreStatusAction } from "@/app/(admin)/platform/actions";
@@ -100,8 +101,24 @@ export function PlatformAdmin({ stores }: { stores: PlatformStoreSummary[] }) {
                 return (
                   <tr key={s.subdomain} style={{ cursor: "default" }}>
                     <td>
-                      <span style={{ fontWeight: 500, color: "var(--text-strong)" }}>
-                        {s.name}
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "var(--space-2)",
+                        }}
+                      >
+                        <Link
+                          href={`/platform/stores/${s.id}`}
+                          style={{ fontWeight: 500, color: "var(--text-strong)" }}
+                        >
+                          {s.name}
+                        </Link>
+                        {s.healthFlags != null && s.healthFlags > 0 && (
+                          <Pill tone="critical" dot={false}>
+                            {s.healthFlags} {s.healthFlags === 1 ? "flag" : "flags"}
+                          </Pill>
+                        )}
                       </span>
                     </td>
                     <td>
