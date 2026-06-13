@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handlePaymentWebhook } from "@/lib/payments";
+import { recordError } from "@/lib/data";
 
 /**
  * Storefront payment webhook stub (Stage 12, PRD §6.11).
@@ -22,6 +23,19 @@ export async function POST(req: Request): Promise<NextResponse> {
   const signature =
     req.headers.get("x-payment-signature") ?? req.headers.get("stripe-signature");
 
-  const result = await handlePaymentWebhook(rawBody, signature);
-  return NextResponse.json(result, { status: 200 });
+  try {
+    const result = await handlePaymentWebhook(rawBody, signature);
+    return NextResponse.json(result, { status: 200 });
+  } catch (err) {
+    // Log the failure to the operator incident feed, but still 200 so the processor
+    // doesn't retry-storm (the event is captured for a human to investigate).
+    await recordError({
+      source: "payment.webhook",
+      message: err instanceof Error ? err.message : "Webhook handler threw",
+      stack: err instanceof Error ? err.stack : null,
+      severity: "error",
+      metadata: { hasSignature: Boolean(signature) },
+    });
+    return NextResponse.json({ handled: false }, { status: 200 });
+  }
 }

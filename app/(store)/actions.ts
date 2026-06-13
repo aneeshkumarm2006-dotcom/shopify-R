@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import type { Address, CartItem, SettlementMethod } from "@/types";
-import { placeOrder, saveCart, validateDiscount, CheckoutError } from "@/lib/data";
+import { placeOrder, saveCart, validateDiscount, recordError, CheckoutError } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 
 /**
@@ -72,6 +72,15 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
     return { ok: true, orderNumber: placed.orderNumber, total: placed.total };
   } catch (err) {
     if (err instanceof CheckoutError) return { ok: false, error: err.message };
+    // Unexpected failure — log it to the operator incident feed (best-effort).
+    await recordError({
+      source: "checkout",
+      message: err instanceof Error ? err.message : "Unknown checkout error",
+      stack: err instanceof Error ? err.stack : null,
+      severity: "critical",
+      storeId: store._id,
+      metadata: { lineCount: input.lines.length },
+    });
     return { ok: false, error: "We couldn't place your order. Please try again." };
   }
 }

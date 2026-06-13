@@ -3,7 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { StoreStatus } from "@/types";
-import { setStoreStatusBySubdomain, recordEvent, getStore } from "@/lib/data";
+import type { PlatformSearchHit } from "@/types";
+import {
+  setStoreStatusBySubdomain,
+  recordEvent,
+  getStore,
+  setErrorResolved,
+  addStoreNote,
+  deleteStoreNote,
+  platformSearch,
+} from "@/lib/data";
 import { requirePlatformAdmin, getActorUserId } from "@/lib/auth";
 import { mintImpersonation, clearImpersonation } from "@/lib/auth/impersonation";
 import { getUserById } from "@/lib/data/account";
@@ -93,6 +102,52 @@ export async function startImpersonation(storeId: string): Promise<Impersonation
   });
   revalidatePath("/", "layout");
   redirect("/dashboard");
+}
+
+/** Mark an incident resolved / reopen it (operator triage). */
+export async function resolveIncident(
+  id: string,
+  resolved: boolean,
+): Promise<{ ok: boolean }> {
+  await requirePlatformAdmin();
+  const updated = await setErrorResolved(id, resolved);
+  if (!updated) return { ok: false };
+  revalidatePath("/platform/incidents");
+  return { ok: true };
+}
+
+/* ----------------------------------------------- support notes + search --- */
+
+export async function addStoreNoteAction(
+  storeId: string,
+  body: string,
+): Promise<{ ok: boolean }> {
+  await requirePlatformAdmin();
+  const operatorId = await getActorUserId();
+  const operator = operatorId ? await getUserById(operatorId) : null;
+  const note = await addStoreNote(storeId, body, {
+    id: operatorId,
+    email: operator?.email ?? null,
+  });
+  if (!note) return { ok: false };
+  revalidatePath(`/platform/stores/${storeId}`);
+  return { ok: true };
+}
+
+export async function deleteStoreNoteAction(
+  id: string,
+  storeId: string,
+): Promise<{ ok: boolean }> {
+  await requirePlatformAdmin();
+  const ok = await deleteStoreNote(id);
+  if (ok) revalidatePath(`/platform/stores/${storeId}`);
+  return { ok };
+}
+
+/** Global search across tenants (store/user/order/product) for the operator. */
+export async function searchPlatform(query: string): Promise<PlatformSearchHit[]> {
+  await requirePlatformAdmin();
+  return platformSearch(query);
 }
 
 /** End the current impersonation session: audit, clear the cookie, back to the portal. */

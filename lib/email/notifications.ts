@@ -1,6 +1,7 @@
 import type { Order, Store } from "@/types";
 import { isEmailConfigured, sendEmail } from "./client";
 import { renderOrderConfirmationEmail } from "./templates";
+import { recordEmail } from "@/lib/data/email-log";
 
 /**
  * High-level transactional notifications (Stage 13, PRD §11).
@@ -47,13 +48,20 @@ export async function sendOrderConfirmation(
       fromName: store.name,
       ...(store.settings.contactEmail ? { replyTo: store.settings.contactEmail } : {}),
     });
+    await recordEmail({ to, subject, kind: "order_confirmation", storeId: store._id, status: "sent" });
     return { sent: true, id };
   } catch (err) {
     // Best-effort: a confirmation email must never block or fail an order.
-    console.error(
-      `[email] order #${order.orderNumber} confirmation failed:`,
-      err instanceof Error ? err.message : err,
-    );
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[email] order #${order.orderNumber} confirmation failed:`, reason);
+    await recordEmail({
+      to,
+      subject: `Order #${order.orderNumber} confirmation`,
+      kind: "order_confirmation",
+      storeId: store._id,
+      status: "failed",
+      error: reason,
+    });
     return { sent: false, reason: "send failed" };
   }
 }

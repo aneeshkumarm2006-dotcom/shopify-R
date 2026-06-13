@@ -68,9 +68,13 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export function PlatformStoreDetail({
   detail,
   feed,
+  notes,
+  traffic,
 }: {
   detail: StoreOperatorDetail;
   feed: EventFeed;
+  notes?: ReactNode;
+  traffic?: ReactNode;
 }) {
   const { store } = detail;
   const pill = storeStatusPill(store.status);
@@ -204,6 +208,12 @@ export function PlatformStoreDetail({
           </ul>
         </Card>
       </div>
+
+      {/* Storefront traffic */}
+      {traffic && <div style={{ marginBottom: "var(--space-5)" }}>{traffic}</div>}
+
+      {/* Support notes */}
+      {notes && <div style={{ marginBottom: "var(--space-5)" }}>{notes}</div>}
 
       {/* Timeline */}
       <div style={{ marginBottom: "var(--space-3)" }}>

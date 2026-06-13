@@ -13,5 +13,11 @@ export {
 } from "./store";
 export { ProductModel, CollectionModel, InventoryAdjustmentModel } from "./catalog";
 export { CartModel, OrderModel, CustomerModel, DiscountModel } from "./commerce";
-export { EventModel } from "./platform";
+export {
+  EventModel,
+  ErrorModel,
+  StoreNoteModel,
+  EmailLogModel,
+  PageViewModel,
+} from "./platform";
 export { CounterModel, type CounterDoc } from "./counter";

@@ -1,5 +1,6 @@
-import type { PlatformKpis, PlatformUserSummary } from "@/types";
+import type { PlatformKpis, PlatformUserSummary, RevenueMetrics } from "@/types";
 import { Card, Eyebrow, Icon, PageHeader, Pill } from "@/components/ui";
+import { money } from "@/lib/format";
 
 /**
  * Platform operator Billing (Stage 14, DESIGN §4.12) — reporting-only. There's no
@@ -8,11 +9,30 @@ import { Card, Eyebrow, Icon, PageHeader, Pill } from "@/components/ui";
  * No charges, invoices, or processor actions are shown.
  */
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <Card>
       <div className="stat-label">{label}</div>
       <div className="stat-value mono">{value}</div>
+      {hint && (
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: "var(--text-xs)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {hint}
+        </div>
+      )}
     </Card>
   );
 }
@@ -20,14 +40,19 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export function PlatformBilling({
   kpis,
   users,
+  revenue,
 }: {
   kpis: PlatformKpis;
   users: PlatformUserSummary[];
+  revenue: RevenueMetrics;
 }) {
   const standardUsers = users.filter((u) => u.plan === "standard");
   const planTotal = kpis.freePlan + kpis.standardPlan;
   const standardPct =
     planTotal > 0 ? Math.round((kpis.standardPlan / planTotal) * 100) : 0;
+  const accountTotal = revenue.standardAccounts + revenue.freeAccounts;
+  const payingPct =
+    accountTotal > 0 ? Math.round((revenue.payingAccounts / accountTotal) * 100) : 0;
 
   return (
     <div>
@@ -55,6 +80,27 @@ export function PlatformBilling({
           Reporting view. No payment processor is wired — plans are set by operators and
           surfaced here for visibility.
         </span>
+      </div>
+
+      <div style={{ marginBottom: "var(--space-3)" }}>
+        <Eyebrow>Revenue</Eyebrow>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "var(--space-4)",
+          marginBottom: "var(--space-6)",
+        }}
+      >
+        <StatCard label="MRR" value={`${money(revenue.mrr)}/mo`} />
+        <StatCard
+          label="Paying accounts"
+          value={String(revenue.payingAccounts)}
+          hint={`${payingPct}% of accounts`}
+        />
+        <StatCard label="Standard accounts" value={String(revenue.standardAccounts)} />
+        <StatCard label="Free accounts" value={String(revenue.freeAccounts)} />
       </div>
 
       <div style={{ marginBottom: "var(--space-3)" }}>

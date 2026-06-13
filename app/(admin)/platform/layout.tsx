@@ -1,4 +1,5 @@
 import { requirePlatformAdmin } from "@/lib/auth";
+import { getOpenErrorCount } from "@/lib/data";
 import { PlatformShell } from "@/components/admin/platform-shell";
 
 /**
@@ -8,5 +9,6 @@ import { PlatformShell } from "@/components/admin/platform-shell";
  */
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   await requirePlatformAdmin();
-  return <PlatformShell>{children}</PlatformShell>;
+  const openIncidents = await getOpenErrorCount();
+  return <PlatformShell openIncidents={openIncidents}>{children}</PlatformShell>;
 }

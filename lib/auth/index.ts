@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 import { redirect, notFound } from "next/navigation";
 import { resolveActiveStore } from "@/lib/data/account";
 import { getStore } from "@/lib/data/store";
+import { recordEvent } from "@/lib/data/events";
 import { MOCK_STORE_ID } from "@/lib/data/mocks";
 import { provisionMerchant } from "./provision";
 import { readImpersonation, ImpersonationReadOnlyError } from "./impersonation";
@@ -65,6 +66,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
         token.userId = identity.userId;
         token.role = identity.role;
+        // Audit the login (who's entering) — best-effort, never blocks sign-in.
+        await recordEvent({
+          type: "auth.login",
+          actorUserId: identity.userId,
+          actorType: identity.role === "platform_admin" ? "platform_admin" : "merchant",
+          target: { kind: "user", id: identity.userId },
+        });
       }
       return token;
     },

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { StoreShell } from "@/components/storefront";
+import { TrackPageview } from "@/components/storefront/track-pageview";
 import {
   StoreInjectionBody,
   StoreInjectionHead,
@@ -29,6 +30,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   return (
     <>
       <StoreInjectionHead injection={store.codeInjection} />
+      {store.subdomain && <TrackPageview subdomain={store.subdomain} />}
       <StoreShell store={store}>{children}</StoreShell>
       <StoreInjectionBody injection={store.codeInjection} />
     </>
