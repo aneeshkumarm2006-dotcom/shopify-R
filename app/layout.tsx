@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   },
   description:
     "The store platform for businesses everyone else bans — build, manage, and publish a storefront for high-risk verticals.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
