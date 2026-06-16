@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useId, useState } from "react";
-import { Button, Icon, Input } from "@/components/ui";
+import { Button, Icon, Input, type InputProps } from "@/components/ui";
 import {
   signInCredentials,
   signUpCredentials,
@@ -103,10 +103,9 @@ export function SignIn({ initialMode = "signin" }: { initialMode?: "signin" | "s
             />
           </Field>
           <Field id={passwordId} label="Password">
-            <Input
+            <PasswordInput
               id={passwordId}
               name="password"
-              type="password"
               large
               required
               minLength={isSignup ? 8 : undefined}
@@ -209,6 +208,48 @@ export function SignIn({ initialMode = "signin" }: { initialMode?: "signin" | "s
         </p>
       </div>
     </AuthFrame>
+  );
+}
+
+/**
+ * Password field with a show/hide toggle. The eye button flips the input between
+ * `password` and `text` so users can verify what they typed; it stays out of the
+ * tab order's submit path and is hidden from screen readers' label text.
+ */
+function PasswordInput({ style, ...rest }: Omit<InputProps, "type">) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <Input
+        {...rest}
+        type={visible ? "text" : "password"}
+        style={{ paddingRight: 44, ...style }}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        title={visible ? "Hide password" : "Show password"}
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 44,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Icon name={visible ? "eyeOff" : "eye"} size={18} aria-hidden />
+      </button>
+    </div>
   );
 }
 
