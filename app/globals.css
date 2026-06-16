@@ -27,6 +27,18 @@
   body {
     margin: 0;
     padding: 0;
+    max-width: 100%;
+    /* Backstop against horizontal scroll. `clip` (not `hidden`) does NOT create a
+       scroll container, so the storefront/marketing sticky headers keep working.
+       Root causes are still fixed at the source; this only catches stragglers. */
+    overflow-x: clip;
+  }
+  /* Media never blows out its container (DESIGN: images/video/embeds are fluid). */
+  img,
+  video,
+  canvas,
+  iframe {
+    max-width: 100%;
   }
   body {
     font-family: var(--font-ui);

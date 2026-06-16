@@ -108,7 +108,7 @@ export function PlatformStoreDetail({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
           gap: "var(--space-4)",
           marginBottom: "var(--space-5)",
         }}
@@ -121,7 +121,7 @@ export function PlatformStoreDetail({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
           gap: "var(--space-4)",
           alignItems: "start",
           marginBottom: "var(--space-5)",

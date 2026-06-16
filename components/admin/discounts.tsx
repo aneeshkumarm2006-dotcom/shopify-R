@@ -213,6 +213,7 @@ export function Discounts({
         />
       ) : (
         <Card pad={false}>
+          <div style={{ overflowX: "auto" }}>
           <table className="tbl">
             <thead>
               <tr>
@@ -306,6 +307,7 @@ export function Discounts({
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 

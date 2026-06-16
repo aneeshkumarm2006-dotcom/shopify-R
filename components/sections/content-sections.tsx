@@ -429,7 +429,7 @@ export function NewsletterStaticSection({ section, preview }: SectionProps) {
               e.preventDefault();
               setDone(true);
             }}
-            style={{ display: "flex", gap: 10, minWidth: 300, flex: 1, maxWidth: 420 }}
+            style={{ display: "flex", gap: 10, minWidth: 0, flex: 1, maxWidth: 420 }}
           >
             <input
               type="email"

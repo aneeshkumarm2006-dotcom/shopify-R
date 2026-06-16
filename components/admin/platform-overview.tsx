@@ -41,7 +41,7 @@ function StatCard({
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
   gap: "var(--space-4)",
   marginBottom: "var(--space-6)",
 };
@@ -85,7 +85,7 @@ export function PlatformOverview({ kpis }: { kpis: PlatformKpis }) {
       <div style={{ marginBottom: "var(--space-3)" }}>
         <Eyebrow>Network</Eyebrow>
       </div>
-      <div style={{ ...GRID, gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 0 }}>
+      <div style={{ ...GRID, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", marginBottom: 0 }}>
         <StatCard label="Total merchants" value={String(kpis.totalMerchants)} />
         <StatCard label="Total orders" value={String(kpis.totalOrders)} />
         <StatCard

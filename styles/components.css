@@ -677,6 +677,8 @@
   box-shadow: var(--shadow-md);
   padding: var(--space-1);
   min-width: 180px;
+  /* Never wider than the viewport — the JS anchor clamps position, this clamps size. */
+  max-width: calc(100vw - 16px);
   animation: menuIn var(--dur-fast) var(--ease-out);
 }
 @keyframes menuIn {

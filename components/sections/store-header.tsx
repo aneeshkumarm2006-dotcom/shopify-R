@@ -245,7 +245,8 @@ function HeaderSearch({ preview }: { preview: boolean }) {
           background: "transparent",
           fontSize: "var(--text-sm)",
           color: "var(--warm-900)",
-          width: 160,
+          // 160px on wide screens, shrinks on narrow viewports so the header right cluster fits
+          width: "min(160px, 38vw)",
         }}
       />
       <IconButton name="search" size={28} aria-label="Submit search" type="submit" />

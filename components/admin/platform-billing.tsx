@@ -88,7 +88,7 @@ export function PlatformBilling({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
           gap: "var(--space-4)",
           marginBottom: "var(--space-6)",
         }}
@@ -109,7 +109,7 @@ export function PlatformBilling({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
           gap: "var(--space-4)",
           marginBottom: "var(--space-6)",
         }}

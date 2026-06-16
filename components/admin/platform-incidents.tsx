@@ -64,7 +64,7 @@ const STATS: StatMeta[] = [
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(5, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
   gap: "var(--space-4)",
   marginBottom: "var(--space-6)",
 };

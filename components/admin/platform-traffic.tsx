@@ -153,6 +153,7 @@ export function PlatformTraffic({ traffic }: { traffic: PlatformTraffic }) {
             <Eyebrow>Top stores by traffic</Eyebrow>
           </div>
           <Card pad={false}>
+            <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -182,6 +183,7 @@ export function PlatformTraffic({ traffic }: { traffic: PlatformTraffic }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
         </>
       )}

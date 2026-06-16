@@ -84,6 +84,8 @@ export function PlatformStoreTraffic({ traffic }: { traffic: StoreTraffic }) {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    // min-width:0 lets this flex child shrink so ellipsis engages
+                    minWidth: 0,
                   }}
                 >
                   {p.path}

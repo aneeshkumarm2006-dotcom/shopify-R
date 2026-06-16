@@ -36,7 +36,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
-        style={{ width, maxWidth: "100vw" }}
+        style={{ width, maxWidth: "100%" }}
       >
         {title && (
           <div className="sheet-header">

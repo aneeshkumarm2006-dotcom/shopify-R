@@ -36,7 +36,10 @@ export function Dropdown({
    * lets the menu escape the `overflow: hidden`/`overflow: auto` of index-table
    * cards, which would otherwise clip a per-row menu (DESIGN §3.4/§3.6).
    */
-  const [pos, setPos] = useState<{ top: number; left?: number; right?: number }>({ top: 0 });
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight?: number }>({
+    top: 0,
+    left: 0,
+  });
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -47,15 +50,42 @@ export function Dropdown({
     );
   }
 
-  /** Anchor the menu to the trigger in viewport coordinates. */
+  /**
+   * Anchor the menu to the trigger in viewport coordinates, then keep it on-screen:
+   * clamp horizontally so a menu near the right/left edge never runs off, and flip
+   * upward when there isn't room below. `maxHeight` (with the menu's own overflow-y)
+   * caps tall menus to the available space instead of spilling past the viewport.
+   */
   function reposition() {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
-    setPos(
-      align === "right"
-        ? { top: rect.bottom + 4, right: window.innerWidth - rect.right }
-        : { top: rect.bottom + 4, left: rect.left },
-    );
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 8; // min breathing room from any viewport edge
+    const gap = 4; // distance between trigger and menu
+    const menuEl = menuRef.current;
+    const menuW = menuEl?.offsetWidth || width || 180;
+    const menuH = menuEl?.offsetHeight || 0;
+
+    // Horizontal: align the menu's edge to the trigger, then clamp into view.
+    let left = align === "right" ? rect.right - menuW : rect.left;
+    left = Math.min(left, vw - menuW - margin);
+    left = Math.max(margin, left);
+
+    // Vertical: prefer below the trigger; flip above when below is too tight.
+    const spaceBelow = vh - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+    let top: number;
+    let maxHeight: number;
+    if (menuH <= spaceBelow || spaceBelow >= spaceAbove) {
+      top = rect.bottom + gap;
+      maxHeight = vh - top - margin;
+    } else {
+      maxHeight = spaceAbove - margin;
+      top = Math.max(margin, rect.top - gap - Math.min(menuH, maxHeight));
+    }
+
+    setPos({ top, left, maxHeight: Math.max(0, maxHeight) });
   }
 
   // Position before paint so the menu never flashes at the wrong spot.
@@ -131,9 +161,10 @@ export function Dropdown({
               position: "fixed",
               top: pos.top,
               left: pos.left,
-              right: pos.right,
               zIndex: 60,
               width,
+              maxHeight: pos.maxHeight,
+              overflowY: "auto",
             }}
           >
             {typeof children === "function"
