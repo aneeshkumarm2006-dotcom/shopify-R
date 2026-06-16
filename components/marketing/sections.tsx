@@ -73,7 +73,7 @@ export function Hero() {
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
-              href="/sign-in"
+              href="/sign-in?mode=signup"
               className="inline-flex h-11 items-center gap-2 rounded-md bg-accent px-6 text-base font-medium text-text-on-accent transition-colors duration-fast hover:bg-accent-hover"
             >
               Get started free <Icon name="arrowRight" size={16} aria-hidden />
@@ -365,7 +365,7 @@ export function Pricing() {
                 ))}
               </ul>
               <Link
-                href="/sign-in"
+                href="/sign-in?mode=signup"
                 className={`mt-7 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-5 text-base font-medium transition-colors duration-fast ${
                   plan.highlighted
                     ? "bg-accent text-text-on-accent hover:bg-accent-hover"
@@ -515,7 +515,7 @@ export function FinalCta() {
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
-                href="/sign-in"
+                href="/sign-in?mode=signup"
                 className="inline-flex h-11 items-center gap-2 rounded-md bg-accent px-6 text-base font-medium text-text-on-accent transition-colors duration-fast hover:bg-accent-hover"
               >
                 Get started free <Icon name="arrowRight" size={16} aria-hidden />

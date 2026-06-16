@@ -1,11 +1,13 @@
 import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import { redirect, notFound } from "next/navigation";
 import { resolveActiveStore } from "@/lib/data/account";
 import { getStore } from "@/lib/data/store";
 import { recordEvent } from "@/lib/data/events";
 import { MOCK_STORE_ID } from "@/lib/data/mocks";
-import { provisionMerchant } from "./provision";
+import { isDbConfigured } from "@/lib/db";
+import { provisionMerchant, authenticateCredentials } from "./provision";
 import { readImpersonation, ImpersonationReadOnlyError } from "./impersonation";
 
 export { ImpersonationReadOnlyError } from "./impersonation";
@@ -37,14 +39,60 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
 
-/** True when Google OAuth + a session secret are configured; gates real-vs-stub. */
+/** Google OAuth is available when its client id + secret are set. */
+const googleConfigured = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+/** Email+password is available when a DB is configured to store/verify accounts. */
+const credentialsConfigured = isDbConfigured();
+
+/**
+ * True when real auth is on: a session secret plus at least one usable sign-in
+ * method (Google OAuth or email+password). Gates real-vs-stub everywhere — with
+ * neither method configured the app stays in the Part A mock/stub fallback.
+ */
 export function isAuthConfigured(): boolean {
-  return Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && NEXTAUTH_SECRET);
+  return Boolean(NEXTAUTH_SECRET && (googleConfigured || credentialsConfigured));
 }
 
-const providers = isAuthConfigured()
-  ? [Google({ clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET! })]
-  : [];
+const providers = [
+  ...(googleConfigured
+    ? [Google({ clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET! })]
+    : []),
+  ...(credentialsConfigured
+    ? [
+        Credentials({
+          name: "Email and password",
+          credentials: { email: {}, password: {} },
+          /**
+           * Verify email+password against the stored scrypt hash. Returning `null`
+           * (unknown email, OAuth-only account, or wrong password) makes NextAuth
+           * throw `CredentialsSignin`, which the sign-in action maps to a generic
+           * "incorrect email or password" — no oracle on which check failed.
+           */
+          async authorize(creds) {
+            const email = String(creds?.email ?? "").trim().toLowerCase();
+            const password = String(creds?.password ?? "");
+            if (!email || !password) return null;
+            const identity = await authenticateCredentials(email, password);
+            if (!identity) return null;
+            // Audit the login (mirrors the OAuth path's auth.login event).
+            await recordEvent({
+              type: "auth.login",
+              actorUserId: identity.userId,
+              actorType: identity.role === "platform_admin" ? "platform_admin" : "merchant",
+              target: { kind: "user", id: identity.userId },
+            });
+            return {
+              id: identity.userId,
+              email: identity.email,
+              name: identity.name,
+              role: identity.role,
+              userId: identity.userId,
+            };
+          },
+        }),
+      ]
+    : []),
+];
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
@@ -54,11 +102,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/sign-in" },
   callbacks: {
     /**
-     * First sign-in (`account` present) → provision/load the merchant and pin
-     * their identity into the token. Subsequent calls just pass the token through.
+     * First sign-in → pin the merchant identity into the token. Two paths:
+     *   • Google OAuth (`account.provider === "google"`, `profile` present) —
+     *     provision-or-load the merchant and audit the login here.
+     *   • Credentials — identity was already resolved (and audited) in `authorize`,
+     *     so we just lift it off the returned `user` object.
+     * Subsequent calls (no `account`) pass the token through unchanged.
      */
-    async jwt({ token, account, profile }) {
-      if (account && profile) {
+    async jwt({ token, account, profile, user }) {
+      if (account?.provider === "google" && profile) {
         const identity = await provisionMerchant({
           googleId: String(profile.sub),
           email: String(profile.email),
@@ -73,6 +125,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           actorType: identity.role === "platform_admin" ? "platform_admin" : "merchant",
           target: { kind: "user", id: identity.userId },
         });
+      } else if (user?.userId) {
+        token.userId = user.userId;
+        token.role = user.role ?? "merchant";
       }
       return token;
     },

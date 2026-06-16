@@ -20,7 +20,7 @@ const NAV = [
   { label: "FAQ", href: "#faq" },
 ];
 
-export function MarketingHeader() {
+export function MarketingHeader({ signedIn = false }: { signedIn?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -47,18 +47,29 @@ export function MarketingHeader() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link
-            href="/sign-in"
-            className="hidden h-9 items-center rounded-md px-3 text-sm font-medium text-text transition-colors duration-fast hover:bg-surface-subtle sm:inline-flex"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/sign-in"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-text-on-accent transition-colors duration-fast hover:bg-accent-hover"
-          >
-            Get started <Icon name="arrowRight" size={15} aria-hidden />
-          </Link>
+          {signedIn ? (
+            <Link
+              href="/dashboard"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-text-on-accent transition-colors duration-fast hover:bg-accent-hover"
+            >
+              Dashboard <Icon name="arrowRight" size={15} aria-hidden />
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/sign-in"
+                className="hidden h-9 items-center rounded-md px-3 text-sm font-medium text-text transition-colors duration-fast hover:bg-surface-subtle sm:inline-flex"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/sign-in?mode=signup"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-text-on-accent transition-colors duration-fast hover:bg-accent-hover"
+              >
+                Get started <Icon name="arrowRight" size={15} aria-hidden />
+              </Link>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
@@ -85,11 +96,11 @@ export function MarketingHeader() {
             </Link>
           ))}
           <Link
-            href="/sign-in"
+            href={signedIn ? "/dashboard" : "/sign-in"}
             onClick={() => setOpen(false)}
             className="rounded-md px-3 py-2.5 text-sm text-text transition-colors duration-fast hover:bg-surface-subtle sm:hidden"
           >
-            Sign in
+            {signedIn ? "Dashboard" : "Sign in"}
           </Link>
         </nav>
       </div>

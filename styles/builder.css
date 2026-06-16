@@ -24,6 +24,8 @@
   padding: 0 var(--space-4);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 2;
 }
 .bld-topbar-left,
 .bld-topbar-right {

@@ -1,3 +1,4 @@
+import { getActorUserId } from "@/lib/auth";
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import {
@@ -26,10 +27,13 @@ import {
  * ⚠ All copy and imagery are PLACEHOLDER — final messaging, brand confirmation,
  * pricing, and assets are pending user input (see TODO "Needs user input").
  */
-export default function MarketingHome() {
+export default async function MarketingHome() {
+  // Real authenticated session → the header swaps Sign in / Get started for a
+  // Dashboard link. Null in stub/demo mode and for anonymous visitors.
+  const signedIn = Boolean(await getActorUserId());
   return (
     <div className="min-h-screen bg-bg">
-      <MarketingHeader />
+      <MarketingHeader signedIn={signedIn} />
       <main>
         <Hero />
         <Problem />

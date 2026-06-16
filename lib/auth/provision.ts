@@ -2,6 +2,15 @@ import mongoose from "mongoose";
 import { dbConnect, StoreModel, UserModel, SubscriptionModel, ThemeConfigModel } from "@/lib/db";
 import { emptyBillingSeam } from "@/lib/payments/billing";
 import { recordEvent } from "@/lib/data";
+import { hashPassword, verifyPassword } from "./password";
+
+/** Thrown by `provisionMerchantWithPassword` when the email already has an account. */
+export class EmailTakenError extends Error {
+  constructor() {
+    super("An account with that email already exists.");
+    this.name = "EmailTakenError";
+  }
+}
 
 /**
  * First-login provisioning (TODO Stage 7, PRD §7.1).
@@ -33,8 +42,17 @@ export interface MerchantIdentity {
 /** Narrow shape we read back from the loosely-typed (`Model<any>`) user doc. */
 interface UserLean {
   _id: string;
+  name?: string;
+  email?: string;
   activeStoreId?: string;
+  passwordHash?: string;
   role?: "merchant" | "platform_admin";
+}
+
+/** A resolved credential login — merchant identity plus the display fields the session needs. */
+export interface CredentialIdentity extends MerchantIdentity {
+  name: string;
+  email: string;
 }
 
 function newId(): string {
@@ -169,4 +187,100 @@ export async function provisionMerchant(input: ProvisionInput): Promise<Merchant
   });
 
   return { userId, storeId, role: "merchant" };
+}
+
+/* ============================================================
+   Email + password (credentials) — sign-up and sign-in.
+   ============================================================ */
+
+export interface PasswordSignupInput {
+  email: string;
+  name: string;
+  password: string;
+}
+
+/**
+ * Sign-up counterpart to `provisionMerchant`: create a brand-new merchant from an
+ * email + password (their primary draft store + free subscription + empty theme,
+ * via the same `createStoreForUser` unit as OAuth first-login). The password is
+ * stored only as a scrypt hash, never in plaintext. Throws `EmailTakenError` if
+ * the email already has an account (OAuth or credential) so the caller can surface
+ * a friendly conflict instead of a 500.
+ */
+export async function provisionMerchantWithPassword(
+  input: PasswordSignupInput,
+): Promise<MerchantIdentity> {
+  await dbConnect();
+  const email = input.email.toLowerCase();
+
+  // One account per email — covers both an existing Google user and a prior signup.
+  const existing = await UserModel.findOne({ email }).lean<UserLean | null>();
+  if (existing) throw new EmailTakenError();
+
+  const userId = newId();
+  const passwordHash = await hashPassword(input.password);
+
+  // 1. user (no store pointers yet — set in step 3, mirroring OAuth provisioning).
+  await UserModel.create({
+    _id: userId,
+    email,
+    name: input.name,
+    passwordHash,
+    role: "merchant",
+  });
+
+  // 2. the primary store (+ its subscription + empty theme), via the shared unit.
+  const storeId = await createStoreForUser(userId, {
+    name: defaultStoreName(input.name, email),
+    contactEmail: email,
+  });
+
+  // 3. point the user at it as both active and primary.
+  await UserModel.findByIdAndUpdate(userId, {
+    activeStoreId: storeId,
+    primaryStoreId: storeId,
+  });
+
+  await recordEvent({
+    type: "account.first_provision",
+    storeId,
+    actorUserId: userId,
+    actorType: "system",
+    target: { kind: "user", id: userId },
+  });
+  await recordEvent({
+    type: "store.created",
+    storeId,
+    actorUserId: userId,
+    actorType: "system",
+    target: { kind: "store", id: storeId },
+  });
+
+  return { userId, storeId, role: "merchant" };
+}
+
+/**
+ * Verify an email + password against the stored scrypt hash, returning the
+ * merchant identity for the NextAuth Credentials `authorize` callback (or `null`
+ * on any failure — unknown email, OAuth-only account with no password, or a bad
+ * password). Deliberately gives no hint which check failed.
+ */
+export async function authenticateCredentials(
+  email: string,
+  password: string,
+): Promise<CredentialIdentity | null> {
+  await dbConnect();
+  const user = await UserModel.findOne({ email: email.toLowerCase() }).lean<UserLean | null>();
+  if (!user?.passwordHash || !user.activeStoreId) return null;
+
+  const ok = await verifyPassword(password, user.passwordHash);
+  if (!ok) return null;
+
+  return {
+    userId: String(user._id),
+    storeId: String(user.activeStoreId),
+    role: user.role ?? "merchant",
+    name: user.name ?? email,
+    email: user.email ?? email,
+  };
 }

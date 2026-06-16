@@ -18,6 +18,16 @@ declare module "next-auth" {
       image?: string | null;
     };
   }
+
+  /**
+   * The Credentials `authorize` callback returns these extra fields so the `jwt`
+   * callback can lift the resolved identity onto the token (the OAuth path derives
+   * it from `provisionMerchant` instead).
+   */
+  interface User {
+    role?: UserRole;
+    userId?: string;
+  }
 }
 
 declare module "next-auth/jwt" {

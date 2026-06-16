@@ -9,7 +9,12 @@ const UserSchema = new Schema(
     _id: stringId,
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     name: { type: String, required: true },
-    googleId: { type: String, required: true, unique: true }, // OAuth subject
+    // Auth identity — a user may sign in with Google, email+password, or both.
+    // `googleId` is set on OAuth sign-in; `passwordHash` on credential sign-up.
+    // Both are optional+sparse so an account can exist with only one of them,
+    // while `email` (unique above) stays the canonical account key.
+    googleId: { type: String, unique: true, sparse: true }, // OAuth subject (sub)
+    passwordHash: { type: String }, // scrypt hash for email+password sign-in
     // Multi-store ownership: a user owns N stores (queried via `Store.ownerId`).
     // `activeStoreId` is the currently-selected store (NOT unique — many users may
     // point at one of their own); `primaryStoreId` is the first store, the anchor

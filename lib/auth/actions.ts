@@ -7,7 +7,12 @@ import {
   getStoreCapStatus,
   setActiveStore as setActiveStoreForUser,
 } from "@/lib/data/account";
-import { createStoreForUser } from "./provision";
+import { AuthError } from "next-auth";
+import {
+  createStoreForUser,
+  provisionMerchantWithPassword,
+  EmailTakenError,
+} from "./provision";
 import {
   checkSubdomain,
   isDnsSafeSubdomain,
@@ -39,6 +44,88 @@ export async function signInGoogle(): Promise<void> {
   // Land on the dashboard; the (admin) guard bounces brand-new merchants (no
   // subdomain yet) onward to /onboarding.
   await signIn("google", { redirectTo: "/dashboard" });
+}
+
+/* ============================================================
+   Email + password (credentials) sign-in / sign-up.
+   These are `useActionState` actions: (prevState, formData) → result.
+   ============================================================ */
+
+export interface CredentialActionState {
+  error?: string;
+}
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** Sign in with email + password. Stub mode (no auth) routes to onboarding like the Google button. */
+export async function signInCredentials(
+  _prev: CredentialActionState,
+  formData: FormData,
+): Promise<CredentialActionState> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  if (!email || !password) return { error: "Enter your email and password." };
+
+  if (!isAuthConfigured()) {
+    const { redirect } = await import("next/navigation");
+    redirect("/onboarding"); // Part A demo flow
+  }
+  if (!isDbConfigured()) {
+    return { error: "Email sign-in isn’t available — use Continue with Google." };
+  }
+
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/dashboard" });
+  } catch (error) {
+    // A bad password makes NextAuth throw an AuthError; success throws a Next.js
+    // redirect, which must propagate untouched.
+    if (error instanceof AuthError) return { error: "Incorrect email or password." };
+    throw error;
+  }
+  return {};
+}
+
+/** Create an account with email + password, then sign in. Stub mode routes to onboarding. */
+export async function signUpCredentials(
+  _prev: CredentialActionState,
+  formData: FormData,
+): Promise<CredentialActionState> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!EMAIL_RE.test(email)) return { error: "Enter a valid email address." };
+  if (password.length < 8) return { error: "Use a password of at least 8 characters." };
+
+  if (!isAuthConfigured()) {
+    const { redirect } = await import("next/navigation");
+    redirect("/onboarding"); // Part A demo flow
+  }
+  if (!isDbConfigured()) {
+    return { error: "Account creation isn’t available — use Continue with Google." };
+  }
+
+  try {
+    await provisionMerchantWithPassword({
+      email,
+      password,
+      name: name || email.split("@")[0] || "Merchant",
+    });
+  } catch (error) {
+    if (error instanceof EmailTakenError) {
+      return { error: "An account with that email already exists — sign in instead." };
+    }
+    throw error;
+  }
+
+  // Brand-new merchant has no subdomain yet → land them in onboarding to claim one.
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/onboarding" });
+  } catch (error) {
+    if (error instanceof AuthError) return { error: "Account created — please sign in." };
+    throw error;
+  }
+  return {};
 }
 
 /** Account menu → end the session (or, stubbed, just return to sign-in). */
