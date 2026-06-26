@@ -10,9 +10,15 @@ import type {
   TemplateKey,
   ThemeConfig,
 } from "@/types";
-import { Icon, ToastProvider, useToast } from "@/components/ui";
+import { Icon, Modal, Button, ToastProvider, useToast } from "@/components/ui";
 import { StoreRenderer } from "@/components/sections";
-import { saveThemeConfigAction } from "@/app/(admin)/builder/actions";
+import type { ThemeVersion } from "@/types";
+import {
+  saveThemeConfigAction,
+  listThemeVersionsAction,
+  restoreThemeVersionAction,
+} from "@/app/(admin)/builder/actions";
+import { fmtDateTime } from "@/lib/format";
 import { BuilderTopbar, TEMPLATE_LABELS } from "./builder-topbar";
 import { BuilderTree } from "./builder-tree";
 import { SectionSettingsPanel } from "./section-settings";
@@ -122,11 +128,16 @@ function BuilderInner({
       }
       setSaveState("saving");
       const cfg = latestConfig.current;
-      const res = await saveThemeConfigAction({
-        templates: cfg.templates,
-        header: cfg.header,
-        footer: cfg.footer,
-      });
+      // An explicit "Save" snapshots the prior config into version history (Phase 6);
+      // debounced autosaves don't, to keep the history meaningful + bounded.
+      const res = await saveThemeConfigAction(
+        {
+          templates: cfg.templates,
+          header: cfg.header,
+          footer: cfg.footer,
+        },
+        reason === "manual",
+      );
       if (res.ok) {
         setSaveState("saved");
         if (reason === "manual") toast("Draft saved");
@@ -298,6 +309,28 @@ function BuilderInner({
 
   const frameWidth = DEVICE_WIDTH[device];
 
+  // Version history (Phase 6).
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions] = useState<ThemeVersion[] | null>(null);
+  const openHistory = useCallback(() => {
+    setHistoryOpen(true);
+    setVersions(null);
+    void listThemeVersionsAction().then(setVersions);
+  }, []);
+  const restore = useCallback(
+    (id: string) => {
+      void restoreThemeVersionAction(id).then((res) => {
+        if (!res.ok) {
+          toast("Couldn't restore that version", { tone: "critical" });
+          return;
+        }
+        // Reload so the builder re-initializes from the restored server config.
+        window.location.reload();
+      });
+    },
+    [toast],
+  );
+
   return (
     <div className="bld">
       <BuilderTopbar
@@ -308,9 +341,47 @@ function BuilderInner({
         onDevice={setDevice}
         saveState={saveState}
         onSave={() => void persist("manual")}
+        onHistory={openHistory}
         onExit={() => router.push("/dashboard")}
         onPublish={() => router.push("/publish")}
       />
+
+      {historyOpen && (
+        <Modal open onClose={() => setHistoryOpen(false)} title="Version history">
+          {versions === null ? (
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>Loading…</p>
+          ) : versions.length === 0 ? (
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
+              No saved versions yet. A snapshot is taken each time you click “Save draft”.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              {versions.map((v) => (
+                <div
+                  key={v._id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "var(--space-3) 0",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, color: "var(--text-strong)" }}>{v.label}</div>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                      {fmtDateTime(v.createdAt)}
+                    </div>
+                  </div>
+                  <Button variant="default" size="sm" onClick={() => restore(v._id)}>
+                    Restore
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
 
       <div className="bld-body">
         {/* LEFT — structure tree */}

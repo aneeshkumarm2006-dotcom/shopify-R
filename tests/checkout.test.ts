@@ -207,11 +207,13 @@ test("placed order returns { orderId, orderNumber, total, lineItems } with full 
 });
 
 test("a single-variant product carries an empty variant label in the snapshot", async () => {
-  // p2 (CBD tincture) has exactly one variant → `variant` field should be "".
+  // p3 (Sour Diesel) has exactly one variant → `variant` field should be "". (p2 was
+  // used here before Phase 2; it's 0-stock on a `deny` policy, which the new real-time
+  // stock check now rejects — so this pins the same contract on an in-stock product.)
   const placed = await placeOrder(
     MOCK_STORE_ID,
-    input([{ productId: "p2", variantId: "p2-v1", quantity: 1 }]),
+    input([{ productId: "p3", variantId: "p3-v1", quantity: 1 }]),
   );
   assert.equal(placed.lineItems[0]!.variant, "");
-  assert.equal(placed.lineItems[0]!.sku, "CBD-30");
+  assert.equal(placed.lineItems[0]!.sku, "SD-35G");
 });

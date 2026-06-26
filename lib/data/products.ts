@@ -1,4 +1,5 @@
 import type { Product, ProductInput, ProductStatus, Variant } from "@/types";
+import type { ParsedProductRow } from "./csv";
 import { mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Products } from "@/lib/db";
@@ -268,4 +269,194 @@ function mapHandleClash(err: unknown): Error {
     return new Error("HANDLE_TAKEN");
   }
   return err instanceof Error ? err : new Error("Product write failed");
+}
+
+/* ============================================================
+   Related products (Phase 4) — pure relevance scoring + lookup.
+   ============================================================ */
+
+/**
+ * Relevance of `other` to `base`: same product type is the strongest signal, then
+ * each shared tag, then same vendor. Pure + deterministic so it's unit-tested and
+ * reused anywhere a "you may also like" rail is needed.
+ */
+export function relatedScore(base: Product, other: Product): number {
+  if (other._id === base._id) return 0;
+  let score = 0;
+  if (base.productType && other.productType === base.productType) score += 3;
+  const baseTags = new Set((base.tags ?? []).map((t) => t.toLowerCase()));
+  for (const t of other.tags ?? []) if (baseTags.has(t.toLowerCase())) score += 1;
+  if (base.vendor && other.vendor === base.vendor) score += 1;
+  return score;
+}
+
+/** Top-N active products related to `base` from a candidate pool (highest score first). */
+export function relatedProducts(base: Product, pool: Product[], limit = 4): Product[] {
+  return pool
+    .filter((p) => p._id !== base._id && p.status === "active")
+    .map((p) => ({ p, s: relatedScore(base, p) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s || (a.p.createdAt < b.p.createdAt ? 1 : -1))
+    .slice(0, limit)
+    .map((x) => x.p);
+}
+
+/** Resolve related products for a storefront PDP. */
+export async function getRelatedProducts(
+  storeId: string,
+  product: Product,
+  limit = 4,
+): Promise<Product[]> {
+  const pool = await getProducts(storeId, { status: "active" });
+  return relatedProducts(product, pool, limit);
+}
+
+/* ============================================================
+   Bulk edit (Phase 4) — apply one set of changes across many products.
+   ============================================================ */
+
+export interface BulkProductEdit {
+  status?: ProductStatus;
+  productType?: string;
+  vendor?: string;
+  addTags?: string[];
+  removeTags?: string[];
+  /** Adjust every variant price by this percent (e.g. +10 / −15). */
+  priceAdjustPct?: number;
+}
+
+/** Compute the product fields a bulk edit changes (pure — used by tests + the writer). */
+export function applyBulkEdit(product: Product, edit: BulkProductEdit): Partial<ProductInput> {
+  const patch: Partial<ProductInput> = {};
+  if (edit.status) patch.status = edit.status;
+  if (edit.productType !== undefined) patch.productType = edit.productType;
+  if (edit.vendor !== undefined) patch.vendor = edit.vendor;
+
+  if (edit.addTags?.length || edit.removeTags?.length) {
+    const remove = new Set((edit.removeTags ?? []).map((t) => t.toLowerCase()));
+    const tags = (product.tags ?? []).filter((t) => !remove.has(t.toLowerCase()));
+    for (const t of edit.addTags ?? []) {
+      if (t && !tags.some((x) => x.toLowerCase() === t.toLowerCase())) tags.push(t);
+    }
+    patch.tags = tags;
+  }
+
+  if (edit.priceAdjustPct) {
+    const factor = 1 + edit.priceAdjustPct / 100;
+    patch.variants = product.variants.map((v) => ({
+      ...v,
+      price: Math.max(0, Math.round(v.price * factor * 100) / 100),
+    }));
+  }
+  return patch;
+}
+
+/** Apply a bulk edit to many products. Returns the count changed. */
+export async function bulkEditProducts(
+  storeId: string,
+  ids: string[],
+  edit: BulkProductEdit,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  if (!isDbConfigured()) return ids.length;
+  let n = 0;
+  for (const id of ids) {
+    const product = await Products.findById(storeId, id);
+    if (!product) continue;
+    const patch = applyBulkEdit(product, edit);
+    if (Object.keys(patch).length === 0) continue;
+    const ok = await Products.updateOne(storeId, { _id: id }, { $set: patch });
+    if (ok) n++;
+  }
+  return n;
+}
+
+/* ============================================================
+   CSV import (Phase 4) — upsert by handle; single primary variant per row.
+   ============================================================ */
+
+function rowVariant(row: ParsedProductRow, existing?: Variant): Variant {
+  return {
+    id: existing?.id ?? `v_${Math.random().toString(36).slice(2, 8)}`,
+    title: existing?.title ?? "Default",
+    sku: row.sku,
+    barcode: row.barcode,
+    price: row.price,
+    compareAtPrice: row.compareAtPrice,
+    inventory: {
+      quantity: row.quantity,
+      policy: existing?.inventory.policy ?? "deny",
+      lowStockThreshold: existing?.inventory.lowStockThreshold ?? 0,
+      trackInventory: existing?.inventory.trackInventory ?? true,
+    },
+  };
+}
+
+export interface ImportSummary {
+  created: number;
+  updated: number;
+  errors: string[];
+}
+
+/**
+ * Upsert parsed CSV rows by handle: existing products are patched (and their primary
+ * variant updated), new handles are created with a single default variant. Note: this
+ * is the one-variant-per-row MVP model — multi-variant products keep their extra
+ * variants on update but only the first is touched by import.
+ */
+export async function importProducts(
+  storeId: string,
+  rows: ParsedProductRow[],
+): Promise<ImportSummary> {
+  const summary: ImportSummary = { created: 0, updated: 0, errors: [] };
+  if (!isDbConfigured()) {
+    summary.errors.push("Import needs a database connection (not available in demo mode).");
+    return summary;
+  }
+
+  for (const row of rows) {
+    try {
+      const existing = await Products.findOne(storeId, { handle: row.handle });
+      if (existing) {
+        const variants = existing.variants.length
+          ? [rowVariant(row, existing.variants[0]), ...existing.variants.slice(1)]
+          : [rowVariant(row)];
+        await Products.updateOne(
+          storeId,
+          { _id: existing._id },
+          {
+            $set: {
+              title: row.title,
+              description: row.description,
+              status: row.status,
+              productType: row.productType,
+              vendor: row.vendor,
+              tags: row.tags,
+              variants,
+            },
+          },
+        );
+        summary.updated++;
+      } else {
+        await Products.create(storeId, {
+          title: row.title,
+          description: row.description,
+          status: row.status,
+          handle: row.handle,
+          productType: row.productType,
+          vendor: row.vendor,
+          tags: row.tags,
+          attributes: [],
+          seo: {},
+          options: [],
+          images: [],
+          variants: [rowVariant(row)],
+        });
+        summary.created++;
+      }
+    } catch {
+      summary.errors.push(`"${row.handle}": write failed (skipped).`);
+    }
+  }
+  return summary;
 }

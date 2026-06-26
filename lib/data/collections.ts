@@ -2,6 +2,7 @@ import type { Collection, CollectionInput, Product } from "@/types";
 import { mockCollections, mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Collections, Products } from "@/lib/db";
+import { filterProductsByRules } from "./collection-rules";
 
 export type { CollectionInput } from "@/types";
 
@@ -53,6 +54,10 @@ export async function getCollectionProducts(
     const collection = scoped(mockCollections, storeId).find((c) => c.handle === handle);
     if (!collection) return resolve([]);
     const rows = scoped(mockProducts, storeId);
+    if (collection.kind === "smart") {
+      const active = rows.filter((p) => p.status === "active");
+      return resolve(filterProductsByRules(active, collection.rules));
+    }
     const byId = new Map(rows.map((p) => [p._id, p]));
     const members = collection.productIds
       .map((id) => byId.get(id))
@@ -62,6 +67,13 @@ export async function getCollectionProducts(
 
   const collection = await Collections.findOne(storeId, { handle });
   if (!collection) return [];
+
+  // Smart collection: membership is whichever active products match the rules.
+  if (collection.kind === "smart") {
+    const active = await Products.findMany(storeId, { status: "active" });
+    return filterProductsByRules(active, collection.rules);
+  }
+
   const rows = await Products.findMany(storeId, { _id: { $in: collection.productIds } });
   // Preserve curated membership order.
   const byId = new Map(rows.map((p) => [p._id, p]));

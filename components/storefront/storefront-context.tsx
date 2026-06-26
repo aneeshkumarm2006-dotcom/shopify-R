@@ -50,18 +50,32 @@ interface StorefrontValue {
   setQuantity: (key: string, quantity: number) => void;
   removeLine: (key: string) => void;
   clearCart: () => void;
+  /** Replace the whole cart (used to adopt the merged cart after account login). */
+  setCartLines: (lines: CartLineState[]) => void;
   // --- cart sheet ---
   cartOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
   // --- session ---
+  /** Active cart key — the anonymous session id, or the customer key when signed in. */
   sessionId: string;
+  // --- customer account (Phase 3) ---
+  customer: StorefrontCustomer | null;
   // --- store chrome ---
   currency: string;
   storeName: string;
+  /** Storefront nav links — the store's collections, so the header always has a menu. */
+  navLinks: { label: string; href: string }[];
   // --- routing ---
   /** Tenant path prefix for customer links, e.g. `/s/northbound` (see middleware). */
   basePath: string;
+}
+
+/** The signed-in shopper, surfaced to the storefront (no PII beyond name/email). */
+export interface StorefrontCustomer {
+  id: string;
+  email: string;
+  name: string;
 }
 
 const StorefrontContext = createContext<StorefrontValue | null>(null);
@@ -137,6 +151,8 @@ export function StorefrontProvider({
   currency = "$",
   ageGateEnabled = true,
   basePath = "",
+  customer = null,
+  navLinks = [],
   children,
 }: {
   storeId: string;
@@ -144,6 +160,8 @@ export function StorefrontProvider({
   currency?: string;
   ageGateEnabled?: boolean;
   basePath?: string;
+  customer?: StorefrontCustomer | null;
+  navLinks?: { label: string; href: string }[];
   children: ReactNode;
 }) {
   // Mounted gate avoids SSR/CSR mismatch: server renders unverified + empty cart,
@@ -153,6 +171,11 @@ export function StorefrontProvider({
   const [cart, setCart] = useState<CartLineState[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [sessionId, setSessionId] = useState("");
+
+  // Active cart key: a signed-in shopper's cart follows their account (so it spans
+  // devices); anonymous shoppers fall back to the per-browser session id. Checkout +
+  // server sync both key off this, so an order retires the right cart.
+  const cartSyncKey = customer?.id ? `cust:${customer.id}` : sessionId;
 
   useEffect(() => {
     setMounted(true);
@@ -175,9 +198,9 @@ export function StorefrontProvider({
     } catch {
       /* storage full/blocked — non-fatal */
     }
-    if (!sessionId) return;
+    if (!cartSyncKey) return;
     void syncCart(
-      sessionId,
+      cartSyncKey,
       cart.map((l) => ({
         productId: l.productId,
         variantId: l.variantId,
@@ -187,7 +210,7 @@ export function StorefrontProvider({
     ).catch(() => {
       /* offline / store unavailable — local cart still holds */
     });
-  }, [cart, mounted, storeId, sessionId]);
+  }, [cart, mounted, storeId, cartSyncKey]);
 
   const verifyAge = useCallback(() => {
     const now = new Date().toISOString();
@@ -237,6 +260,7 @@ export function StorefrontProvider({
   }, []);
 
   const clearCart = useCallback(() => setCart([]), []);
+  const setCartLines = useCallback((lines: CartLineState[]) => setCart(lines), []);
 
   const value = useMemo<StorefrontValue>(() => {
     const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -252,12 +276,15 @@ export function StorefrontProvider({
       setQuantity,
       removeLine,
       clearCart,
+      setCartLines,
       cartOpen,
       openCart: () => setCartOpen(true),
       closeCart: () => setCartOpen(false),
-      sessionId,
+      sessionId: cartSyncKey,
+      customer,
       currency,
       storeName,
+      navLinks,
       basePath,
     };
   }, [
@@ -269,10 +296,13 @@ export function StorefrontProvider({
     setQuantity,
     removeLine,
     clearCart,
+    setCartLines,
     cartOpen,
-    sessionId,
+    cartSyncKey,
+    customer,
     currency,
     storeName,
+    navLinks,
     basePath,
   ]);
 

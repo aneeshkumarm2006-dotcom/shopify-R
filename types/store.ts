@@ -26,8 +26,56 @@ export interface AgeGate {
   message: string;
 }
 
+/**
+ * One shipping rate the merchant offers (Phase 2). `price` is a flat amount in the
+ * store's currency. `freeOver` (when set) zeroes the rate once the discounted
+ * subtotal reaches it (free-shipping threshold). `regions` (when non-empty) limits
+ * the rate to specific shipping regions/states (matched case-insensitively); an
+ * empty/absent list means the rate applies everywhere.
+ */
+export interface ShippingRate {
+  id: string;
+  label: string;
+  price: number;
+  freeOver?: number | null;
+  regions?: string[];
+}
+
+/** Per-store shipping configuration (Phase 2). When disabled or empty, checkout
+ *  falls back to a single free "Standard" rate so totals never break. */
+export interface ShippingSettings {
+  enabled: boolean;
+  rates: ShippingRate[];
+}
+
+/** A region/state tax-rate override (Phase 2), e.g. `{ region: "CA", rate: 7.25 }`. */
+export interface TaxRegionRate {
+  region: string;
+  rate: number; // percent (0–100)
+}
+
+/**
+ * Per-store tax configuration (Phase 2). `rate` is the default percent applied to
+ * the discounted subtotal; `regionRates` override it for specific regions. When
+ * `appliesToShipping` is set, shipping is added to the taxable base. Disabled by
+ * default so a store with no tax setup is charged exactly subtotal − discount.
+ */
+export interface TaxSettings {
+  enabled: boolean;
+  rate: number; // default percent (0–100)
+  label?: string; // e.g. "Sales tax", "VAT"
+  appliesToShipping?: boolean;
+  regionRates?: TaxRegionRate[];
+}
+
 export interface StoreSettings {
   currency: string; // display symbol, e.g. "$"
+  /**
+   * Optional ISO-4217 currency code (e.g. "USD", "EUR", "GBP"). When set, money is
+   * formatted with `Intl.NumberFormat` (correct symbol + placement) and takes
+   * precedence over the bare `currency` symbol. No FX — a store has one currency.
+   */
+  currencyCode?: string;
   contactEmail: string;
   socialLinks?: { label: string; url: string }[];
   logoUrl?: string; // Cloudinary URL
@@ -41,6 +89,10 @@ export interface StoreSettings {
     cod: boolean;
     inStore: boolean;
   };
+  /** Tax engine config (Phase 2). Absent → no tax charged. */
+  tax?: TaxSettings;
+  /** Shipping engine config (Phase 2). Absent → single free "Standard" rate. */
+  shipping?: ShippingSettings;
 }
 
 export interface SeoDefaults {
@@ -67,6 +119,8 @@ export interface Store extends Timestamps {
   seoDefaults: SeoDefaults;
   codeInjection: CodeInjection;
   publishedAt?: ISODate; // set when first published
+  /** When set, a cron auto-publishes the store at this time (Phase 6). Cleared on publish. */
+  scheduledPublishAt?: ISODate | null;
 }
 
 /* ============================================================
@@ -118,6 +172,61 @@ export interface ThemeConfig extends Timestamps {
   templates: Record<TemplateKey, Template>;
   header: Section; // shared across templates
   footer: Section; // shared across templates
+}
+
+/** A saved snapshot of a theme config (Phase 6 version history). */
+export interface ThemeVersion extends Timestamps {
+  _id: Id;
+  storeId: Id;
+  label: string; // auto ("Autosave") or merchant-supplied
+  snapshot: {
+    templates: Record<TemplateKey, Template>;
+    header: Section;
+    footer: Section;
+  };
+}
+
+/* ============================================================
+   Locations (Phase 6) — multi-location inventory. Each store has ≥1 location;
+   per-variant stock is tracked per location and summed into the sellable total.
+   ============================================================ */
+export interface Location extends Timestamps {
+  _id: Id;
+  storeId: Id;
+  name: string;
+  isDefault: boolean; // the fallback location new stock lands in
+}
+
+/* ============================================================
+   Staff accounts & RBAC (Phase 6) — multiple users per store with roles.
+   ============================================================ */
+/** Roles, most→least privileged. The store's `ownerId` user is always `owner`. */
+export type StoreRole = "owner" | "admin" | "staff";
+
+/** An invited member exists before its user signs in; it activates on first access. */
+export type StoreMemberStatus = "invited" | "active";
+
+/** Capability keys gated by role (one per admin area that needs protection). */
+export type Permission =
+  | "products"
+  | "orders"
+  | "customers"
+  | "discounts"
+  | "marketing"
+  | "content" // builder / theme
+  | "analytics"
+  | "settings"
+  | "publish"
+  | "staff"; // manage other members (owner-only)
+
+export interface StoreMember extends Timestamps {
+  _id: Id;
+  storeId: Id;
+  email: string; // invitation key; matches the user's account email
+  userId?: Id | null; // linked once that email signs in
+  name?: string;
+  role: StoreRole;
+  status: StoreMemberStatus;
 }
 
 /* ============================================================

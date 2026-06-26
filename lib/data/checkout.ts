@@ -7,6 +7,9 @@ import { markCartConverted } from "./cart";
 import { getNextOrderNumber } from "./sequence";
 import { getStore } from "./store";
 import { validateDiscount, redeemDiscount } from "./discounts";
+import { resolveShippingRate } from "./shipping";
+import { computeTax } from "./tax";
+import { validateGiftCard, redeemGiftCard, creditGiftCard, applyGiftCard } from "./gift-cards";
 import { createPaymentIntent } from "@/lib/payments";
 import { sendOrderConfirmation } from "@/lib/email";
 
@@ -61,16 +64,31 @@ export interface CheckoutInput {
   sessionId?: string;
   /** Store display currency, carried into the payment seam (defaults to `$`). */
   currency?: string;
+  /** Shipping region/state (e.g. "OR") — drives region tax + shipping rate matching. */
+  region?: string;
+  /** Chosen shipping rate id; the price is re-resolved server-side (never trusted). */
+  shippingRateId?: string;
+  /** Gift-card code to redeem — validated + drawn down SERVER-SIDE (Phase 4). */
+  giftCardCode?: string;
 }
 
 export interface PlacedOrder {
   orderId: string;
   orderNumber: number;
+  /** Goods total before discount/shipping/tax. */
+  subtotal: number;
+  discountAmount: number;
+  shippingTotal: number;
+  shippingMethod: string;
+  taxTotal: number;
+  /** Amount drawn from a redeemed gift card (0 when none). */
+  giftCardAmount: number;
+  /** Authoritative amount charged: `(subtotal − discount) + shipping + tax − giftCard`. */
   total: number;
   lineItems: OrderLineItem[];
 }
 
-/** Raised when a checkout can't be fulfilled (empty cart, or no valid lines). */
+/** Raised when a checkout can't be fulfilled (empty cart, no valid lines, oversell). */
 export class CheckoutError extends Error {
   constructor(message: string) {
     super(message);
@@ -91,6 +109,12 @@ export async function placeOrder(
 
   const lineItems: OrderLineItem[] = [];
   const decrements: DecrementLine[] = [];
+  // Aggregate requested quantity per variant so the stock check below accounts for
+  // the same variant appearing across multiple cart lines.
+  const requested = new Map<
+    string,
+    { label: string; available: number; tracked: boolean; allowOversell: boolean; qty: number }
+  >();
   for (const line of input.lines) {
     const product = byId.get(line.productId);
     const variant = product?.variants.find((v) => v.id === line.variantId);
@@ -106,10 +130,34 @@ export async function placeOrder(
     if (variant.inventory.trackInventory) {
       decrements.push({ productId: product._id, variantId: variant.id, quantity });
     }
+    const key = `${product._id}::${variant.id}`;
+    const entry = requested.get(key) ?? {
+      label: variant.title ? `${product.title} · ${variant.title}` : product.title,
+      available: variant.inventory.quantity,
+      tracked: variant.inventory.trackInventory,
+      allowOversell: variant.inventory.policy === "continue",
+      qty: 0,
+    };
+    entry.qty += quantity;
+    requested.set(key, entry);
   }
 
   if (lineItems.length === 0) {
     throw new CheckoutError("None of the items in your cart are available.");
+  }
+
+  // Real-time stock check (Phase 2): a tracked variant on a `deny` policy can't be
+  // oversold. `continue`-policy and untracked variants are allowed through (the audit
+  // log faithfully records any resulting negative quantity).
+  for (const item of requested.values()) {
+    if (item.tracked && !item.allowOversell && item.qty > item.available) {
+      const left = Math.max(0, item.available);
+      throw new CheckoutError(
+        left === 0
+          ? `${item.label} is out of stock.`
+          : `Only ${left} of ${item.label} ${left === 1 ? "is" : "are"} left.`,
+      );
+    }
   }
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.price * l.quantity, 0);
@@ -130,7 +178,43 @@ export async function placeOrder(
       discountCode = result.code;
     }
   }
-  const total = Math.max(0, subtotal - discountAmount);
+  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+
+  // 1c-bis. Shipping + tax (Phase 2). Both resolve SERVER-SIDE from the store's own
+  // settings — the client only names a region + rate id, never a price/amount, so a
+  // tampered client can't undercut shipping or tax. A store with neither configured
+  // gets free "Standard" shipping and zero tax, so `total` stays subtotal − discount.
+  const shipping = resolveShippingRate(store?.settings.shipping, {
+    subtotal: discountedSubtotal,
+    region: input.region,
+    rateId: input.shippingRateId,
+  });
+  const shippingTotal = shipping.price;
+  const taxTotal = computeTax(store?.settings.tax, {
+    subtotal: discountedSubtotal,
+    shipping: shippingTotal,
+    region: input.region,
+  });
+  const grossTotal = discountedSubtotal + shippingTotal + taxTotal;
+
+  // 1c-ter. Gift card (Phase 4). Validated + drawn down SERVER-SIDE: the client only
+  // names a code, never an amount. The atomic guarded `$inc` in `redeemGiftCard` makes
+  // the draw safe under concurrent checkouts; if it doesn't match (card emptied/disabled
+  // between validate and redeem), we simply don't apply it. A failure to PERSIST the
+  // order afterwards re-credits the card (compensating action) so value is never lost.
+  let giftCardAmount = 0;
+  let giftCardCode: string | null = null;
+  if (input.giftCardCode) {
+    const gc = await validateGiftCard(storeId, input.giftCardCode);
+    if (gc.ok) {
+      const applied = applyGiftCard(gc.card.balance, grossTotal).applied;
+      if (applied > 0 && (await redeemGiftCard(storeId, gc.card.code, applied))) {
+        giftCardAmount = applied;
+        giftCardCode = gc.card.code;
+      }
+    }
+  }
+  const total = Math.max(0, grossTotal - giftCardAmount);
 
   // 1d. Resolve + validate the settlement method against what the store offers.
   //     COD / in-store keep the order `pending` (merchant marks paid on delivery);
@@ -165,23 +249,37 @@ export async function placeOrder(
       : null;
 
   // 4. Persist the order (pending by default, with frozen snapshots + age stamp).
-  const order = await createOrder(storeId, {
-    storeId,
-    orderNumber,
-    customerId: customer._id,
-    lineItems,
-    subtotal,
-    discountAmount,
-    discountCode,
-    total,
-    shippingAddress: input.shippingAddress,
-    contact: input.contact,
-    settlementMethod,
-    paymentStatus: intent?.status ?? "pending",
-    fulfillmentStatus: "unfulfilled",
-    ageVerifiedAt: input.ageVerifiedAt,
-    paymentIntent: intent?.id ?? null,
-  });
+  //    If this throws, re-credit any gift card drawn above so no value is lost.
+  let order;
+  try {
+    order = await createOrder(storeId, {
+      storeId,
+      orderNumber,
+      customerId: customer._id,
+      lineItems,
+      subtotal,
+      discountAmount,
+      discountCode,
+      shippingTotal,
+      shippingMethod: shipping.label,
+      taxTotal,
+      giftCardCode,
+      giftCardAmount,
+      total,
+      shippingAddress: input.shippingAddress,
+      contact: input.contact,
+      settlementMethod,
+      paymentStatus: intent?.status ?? "pending",
+      fulfillmentStatus: "unfulfilled",
+      ageVerifiedAt: input.ageVerifiedAt,
+      paymentIntent: intent?.id ?? null,
+    });
+  } catch (err) {
+    if (giftCardCode && giftCardAmount > 0) {
+      await creditGiftCard(storeId, giftCardCode, giftCardAmount).catch(() => {});
+    }
+    throw err;
+  }
 
   // 5–7. Decrement stock, update customer totals, retire the cart. None of these
   // should undo the placed order if they hiccup, so failures are swallowed.
@@ -208,5 +306,16 @@ export async function placeOrder(
     /* notification is best-effort; never blocks the placed order */
   }
 
-  return { orderId: order._id, orderNumber, total, lineItems };
+  return {
+    orderId: order._id,
+    orderNumber,
+    subtotal,
+    discountAmount,
+    shippingTotal,
+    shippingMethod: shipping.label,
+    taxTotal,
+    giftCardAmount,
+    total,
+    lineItems,
+  };
 }

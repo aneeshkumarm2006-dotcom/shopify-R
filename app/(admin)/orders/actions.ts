@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { FulfillmentStatus, PaymentStatus } from "@/types";
-import { updateOrderStatus, createFulfillment, FulfillmentError, recordEvent } from "@/lib/data";
+import { updateOrderStatus, createFulfillment, addOrderNote, FulfillmentError, recordEvent } from "@/lib/data";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
@@ -17,7 +17,8 @@ export async function setOrderStatus(
 ): Promise<{ ok: boolean }> {
   const storeId = await requireMerchantStoreId();
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
-  const updated = await updateOrderStatus(storeId, id, patch);
+  const actorId = await getActorUserId();
+  const updated = await updateOrderStatus(storeId, id, patch, actorId);
   if (!updated) return { ok: false };
   await recordEvent({
     type: "order.status_changed",
@@ -56,7 +57,7 @@ export async function fulfillOrder(
   const storeId = await requireMerchantStoreId();
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
-    const updated = await createFulfillment(storeId, id, input);
+    const updated = await createFulfillment(storeId, id, { ...input, actorId: await getActorUserId() });
     if (!updated) return { ok: false, error: "Order not found." };
     await recordEvent({
       type: "order.fulfilled",
@@ -72,4 +73,24 @@ export async function fulfillOrder(
     if (err instanceof FulfillmentError) return { ok: false, error: err.message };
     return { ok: false, error: "We couldn't fulfill this order. Please try again." };
   }
+}
+
+/** Append a free-text note to an order's timeline (Phase 6). */
+export async function addOrderNoteAction(
+  id: string,
+  body: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
+  if (!body.trim()) return { ok: false, error: "Write a note first." };
+  const updated = await addOrderNote(storeId, id, body, await getActorUserId());
+  if (!updated) return { ok: false, error: "Order not found." };
+  await recordEvent({
+    type: "order.note_added",
+    storeId,
+    actorUserId: await getActorUserId(),
+    target: { kind: "order", id },
+  });
+  revalidatePath(`/orders/${id}`);
+  return { ok: true };
 }

@@ -1,30 +1,27 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { getStoreAnalytics, getStore } from "@/lib/data";
+import { requireMerchantStoreId } from "@/lib/auth";
+import { storeCurrency } from "@/lib/format";
+import { AnalyticsView } from "@/components/admin/analytics-view";
 
 export const metadata: Metadata = { title: "Analytics" };
 
 /**
- * Analytics (DESIGN §4.1 nav). The MVP keeps reporting minimal (PRD §6.9) — the
- * headline numbers live on the dashboard, so this is a deliberate signpost rather
- * than a second reporting surface. Deeper analytics are out of scope for now.
+ * Analytics (Phase 6) — funnel (visitors → carts → orders), traffic attribution,
+ * join cohorts with repeat rate, top products, and a daily sales series. Period
+ * toggle (7d/30d) is read from the query string.
  */
-export default function AnalyticsPage() {
-  return (
-    <div>
-      <PageHeader title="Analytics" />
-      <Card>
-        <EmptyState
-          icon="analytics"
-          title="Deeper analytics coming later"
-          body="The MVP keeps reporting minimal. Your headline numbers — sales, orders, customers, low stock — live on the dashboard."
-          action={
-            <Link href="/dashboard" className="btn btn-md btn-default">
-              Back to Home
-            </Link>
-          }
-        />
-      </Card>
-    </div>
-  );
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const { period: periodParam } = await searchParams;
+  const period = periodParam === "7d" ? "7d" : "30d";
+  const storeId = await requireMerchantStoreId();
+  const [analytics, store] = await Promise.all([
+    getStoreAnalytics(storeId, period),
+    getStore(storeId),
+  ]);
+  return <AnalyticsView analytics={analytics} currency={storeCurrency(store?.settings)} />;
 }

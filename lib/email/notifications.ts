@@ -1,6 +1,11 @@
-import type { Order, Store } from "@/types";
+import type { Cart, Order, Store } from "@/types";
 import { isEmailConfigured, sendEmail } from "./client";
 import { renderOrderConfirmationEmail } from "./templates";
+import {
+  renderAbandonedCartEmail,
+  renderCampaignEmail,
+  type AbandonedCartData,
+} from "./marketing-templates";
 import { recordEmail } from "@/lib/data/email-log";
 
 /**
@@ -62,6 +67,67 @@ export async function sendOrderConfirmation(
       status: "failed",
       error: reason,
     });
+    return { sent: false, reason: "send failed" };
+  }
+}
+
+/**
+ * Send an abandoned-cart recovery email (Phase 5). Failure-tolerant like the
+ * confirmation send — the cron loop must never abort on one bad address.
+ */
+export async function sendAbandonedCartEmail(
+  store: Store,
+  to: string,
+  data: Omit<AbandonedCartData, "store">,
+): Promise<NotificationResult> {
+  if (!isEmailConfigured()) return { sent: false, reason: "email not configured" };
+  if (!to.trim()) return { sent: false, reason: "no recipient" };
+  try {
+    const { subject, html, text } = renderAbandonedCartEmail({ store, ...data });
+    const { id } = await sendEmail({
+      to,
+      subject,
+      html,
+      text,
+      fromName: store.name,
+      ...(store.settings.contactEmail ? { replyTo: store.settings.contactEmail } : {}),
+    });
+    await recordEmail({ to, subject, kind: "abandoned_cart", storeId: store._id, status: "sent" });
+    return { sent: true, id };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await recordEmail({ to, subject: "Abandoned cart", kind: "abandoned_cart", storeId: store._id, status: "failed", error: reason });
+    return { sent: false, reason: "send failed" };
+  }
+}
+
+/**
+ * Send one campaign email to a recipient (Phase 5). Failure-tolerant; the campaign
+ * sender awaits each and tallies successes.
+ */
+export async function sendCampaignEmail(
+  store: Store,
+  to: string,
+  subject: string,
+  body: string,
+): Promise<NotificationResult> {
+  if (!isEmailConfigured()) return { sent: false, reason: "email not configured" };
+  if (!to.trim()) return { sent: false, reason: "no recipient" };
+  try {
+    const rendered = renderCampaignEmail({ store, subject, body });
+    const { id } = await sendEmail({
+      to,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      fromName: store.name,
+      ...(store.settings.contactEmail ? { replyTo: store.settings.contactEmail } : {}),
+    });
+    await recordEmail({ to, subject: rendered.subject, kind: "campaign", storeId: store._id, status: "sent" });
+    return { sent: true, id };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await recordEmail({ to, subject, kind: "campaign", storeId: store._id, status: "failed", error: reason });
     return { sent: false, reason: "send failed" };
   }
 }

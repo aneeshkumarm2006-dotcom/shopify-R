@@ -1,9 +1,21 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Address, CartItem, SettlementMethod } from "@/types";
-import { placeOrder, saveCart, validateDiscount, recordError, CheckoutError } from "@/lib/data";
+import {
+  placeOrder,
+  saveCart,
+  validateDiscount,
+  recordError,
+  CheckoutError,
+  createReview,
+  getProductByHandle,
+  validateGiftCard,
+  applyGiftCard,
+} from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
+import { getCurrentCustomer } from "@/lib/customer/session";
 
 /**
  * Storefront customer actions (Stage 10, PRD §6.6). These run server-side for the
@@ -31,6 +43,10 @@ interface SubmitOrderInput {
   discountCode?: string;
   /** How the customer settles — re-checked against the store's enabled methods. */
   settlementMethod?: SettlementMethod;
+  /** Chosen shipping rate id — re-priced server-side from store settings. */
+  shippingRateId?: string;
+  /** Gift-card code — validated + redeemed server-side by `placeOrder`. */
+  giftCardCode?: string;
 }
 
 export interface SubmitOrderResult {
@@ -65,9 +81,13 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
       ageVerifiedAt,
       lines: input.lines,
       currency: store.settings.currency,
+      // The shipping region drives region tax + rate matching; comes from the state field.
+      ...(input.state?.trim() ? { region: input.state.trim() } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       ...(input.discountCode?.trim() ? { discountCode: input.discountCode.trim() } : {}),
       ...(input.settlementMethod ? { settlementMethod: input.settlementMethod } : {}),
+      ...(input.shippingRateId?.trim() ? { shippingRateId: input.shippingRateId.trim() } : {}),
+      ...(input.giftCardCode?.trim() ? { giftCardCode: input.giftCardCode.trim() } : {}),
     });
     return { ok: true, orderNumber: placed.orderNumber, total: placed.total };
   } catch (err) {
@@ -103,6 +123,65 @@ export async function applyDiscount(
   const result = await validateDiscount(store._id, code, subtotal);
   if (result.ok) return { ok: true, amount: result.amount, code: result.code };
   return { ok: false, reason: result.reason };
+}
+
+/**
+ * Validate a gift-card code and PREVIEW how much it would apply against an amount due
+ * (Phase 4). Display-only — the authoritative draw-down happens atomically inside
+ * `placeOrder`, so a tampered preview can't change what's actually charged. Returns
+ * the card's current balance + the amount it would cover, or a typed rejection reason.
+ */
+export async function previewGiftCard(
+  code: string,
+  amountDue: number,
+): Promise<{ ok: boolean; balance?: number; applies?: number; code?: string; reason?: string }> {
+  const store = await resolveStorefront();
+  if (!store || !code.trim()) return { ok: false, reason: "not_found" };
+
+  const result = await validateGiftCard(store._id, code);
+  if (!result.ok) return { ok: false, reason: result.reason };
+  const applies = applyGiftCard(result.card.balance, Math.max(0, amountDue)).applied;
+  return { ok: true, balance: result.card.balance, applies, code: result.card.code };
+}
+
+/**
+ * Post a product review (Phase 4) for the resolved tenant. The product is re-fetched
+ * server-side (must exist + be active) and a signed-in shopper's identity is taken
+ * from the customer session, never the form — so authorship can't be spoofed for a
+ * logged-in account. Reviews auto-publish; merchants moderate from the admin.
+ */
+export async function submitReview(input: {
+  handle: string;
+  rating: number;
+  authorName: string;
+  title?: string;
+  body: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const store = await resolveStorefront();
+  if (!store) return { ok: false, error: "This store isn't available right now." };
+
+  if (!input.body.trim()) return { ok: false, error: "Please write a few words." };
+  if (!(input.rating >= 1 && input.rating <= 5)) return { ok: false, error: "Pick a star rating." };
+
+  const product = await getProductByHandle(store._id, input.handle);
+  if (!product || product.status !== "active") return { ok: false, error: "Product not found." };
+
+  const customer = await getCurrentCustomer(store);
+  const authorName = (customer?.name || input.authorName || "").trim();
+  if (!authorName) return { ok: false, error: "Please add your name." };
+
+  const created = await createReview(store._id, {
+    productId: product._id,
+    customerId: customer?._id ?? null,
+    authorName,
+    rating: input.rating,
+    ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    body: input.body,
+  });
+  if (!created) return { ok: false, error: "Reviews aren't available in this environment." };
+
+  revalidatePath(`/products/${input.handle}`);
+  return { ok: true };
 }
 
 /**

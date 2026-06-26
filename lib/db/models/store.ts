@@ -55,9 +55,12 @@ const StoreSchema = new Schema(
     seoDefaults: { type: Schema.Types.Mixed, default: () => ({}) },
     codeInjection: { type: Schema.Types.Mixed, default: () => ({}) },
     publishedAt: { type: Date },
+    scheduledPublishAt: { type: Date, default: null }, // Phase 6 scheduled publish
   },
   baseSchemaOptions,
 );
+// Cron sweep for due scheduled publishes.
+StoreSchema.index({ scheduledPublishAt: 1 });
 
 /* ============================================================
    5.3 themeConfig (one per store — the builder's output)
@@ -90,7 +93,57 @@ const SubscriptionSchema = new Schema(
   baseSchemaOptions,
 );
 
+/* ============================================================
+   Theme version history (Phase 6) — snapshots of past theme configs.
+   ============================================================ */
+const ThemeVersionSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true },
+    label: { type: String, default: "" },
+    snapshot: { type: Schema.Types.Mixed, default: () => ({}) },
+  },
+  baseSchemaOptions,
+);
+ThemeVersionSchema.index({ storeId: 1, createdAt: -1 });
+
+/* ============================================================
+   Staff members (Phase 6) — users with a role on a store (besides the owner).
+   ============================================================ */
+const StoreMemberSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    userId: { type: String, default: null }, // linked on first sign-in
+    name: { type: String, default: "" },
+    role: { type: String, enum: ["owner", "admin", "staff"], default: "staff" },
+    status: { type: String, enum: ["invited", "active"], default: "invited" },
+  },
+  baseSchemaOptions,
+);
+// One membership per (store, email); fan out by email (a user's stores) + by store.
+StoreMemberSchema.index({ storeId: 1, email: 1 }, { unique: true });
+StoreMemberSchema.index({ email: 1 });
+
+/* ============================================================
+   Locations (Phase 6) — multi-location inventory.
+   ============================================================ */
+const LocationSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true },
+    name: { type: String, required: true },
+    isDefault: { type: Boolean, default: false },
+  },
+  baseSchemaOptions,
+);
+LocationSchema.index({ storeId: 1, createdAt: 1 });
+
 export const UserModel = defineModel("User", UserSchema);
 export const StoreModel = defineModel("Store", StoreSchema);
 export const ThemeConfigModel = defineModel("ThemeConfig", ThemeConfigSchema);
+export const ThemeVersionModel = defineModel("ThemeVersion", ThemeVersionSchema);
+export const StoreMemberModel = defineModel("StoreMember", StoreMemberSchema);
+export const LocationModel = defineModel("Location", LocationSchema);
 export const SubscriptionModel = defineModel("Subscription", SubscriptionSchema);

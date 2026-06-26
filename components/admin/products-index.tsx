@@ -6,16 +6,23 @@ import type { Product } from "@/types";
 import {
   bulkSetStatusAction,
   bulkDeleteAction,
+  bulkEditAction,
+  exportProductsCsv,
+  importProductsAction,
   duplicateProductAction,
   removeProduct,
 } from "@/app/(admin)/products/actions";
+import type { BulkProductEdit } from "@/lib/data";
 import {
   Button,
   Dropdown,
   EmptyState,
+  Field,
   IconButton,
+  Input,
   MenuItem,
   MenuSeparator,
+  Modal,
   NoResultsState,
   PageHeader,
   Pill,
@@ -42,6 +49,8 @@ export function ProductsIndex({ products }: { products: Product[] }) {
   const [tab, setTab] = useState("All");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const counts = useMemo(
     () => ({
@@ -90,6 +99,50 @@ export function ProductsIndex({ products }: { products: Product[] }) {
     });
   }
 
+  function exportCsv() {
+    startTransition(async () => {
+      const res = await exportProductsCsv();
+      if (!res.ok || !res.csv) {
+        toast("Couldn't export products", { tone: "critical" });
+        return;
+      }
+      const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "products.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Products exported");
+    });
+  }
+
+  function runImport(csv: string, done: (errors: string[]) => void) {
+    startTransition(async () => {
+      const res = await importProductsAction(csv);
+      if (res.created || res.updated) {
+        toast(`Imported — ${res.created} created, ${res.updated} updated`);
+        router.refresh();
+      }
+      done(res.errors);
+    });
+  }
+
+  function runBulkEdit(edit: BulkProductEdit) {
+    const ids = selected;
+    startTransition(async () => {
+      const res = await bulkEditAction(ids, edit);
+      if (res.ok) {
+        toast(`${res.count} product${res.count === 1 ? "" : "s"} updated`);
+        setSelected([]);
+        setBulkEditOpen(false);
+        router.refresh();
+      } else {
+        toast(res.error ?? "Couldn't apply changes", { tone: "critical" });
+      }
+    });
+  }
+
   function duplicate(id: string, close: () => void) {
     startTransition(async () => {
       const res = await duplicateProductAction(id);
@@ -123,6 +176,9 @@ export function ProductsIndex({ products }: { products: Product[] }) {
       <Button size="sm" variant="default" onClick={() => bulk("draft")}>
         Set draft
       </Button>
+      <Button size="sm" variant="default" onClick={() => setBulkEditOpen(true)}>
+        Edit
+      </Button>
       <Button size="sm" variant="critical" onClick={() => bulk("delete")}>
         Delete
       </Button>
@@ -142,6 +198,12 @@ export function ProductsIndex({ products }: { products: Product[] }) {
             <Button variant="default" icon="layers" onClick={() => router.push("/collections")}>
               Collections
             </Button>
+            <Button variant="default" icon="download" onClick={exportCsv}>
+              Export
+            </Button>
+            <Button variant="default" icon="upload" onClick={() => setImportOpen(true)}>
+              Import
+            </Button>
             <Button
               variant="primary"
               icon="plus"
@@ -152,6 +214,15 @@ export function ProductsIndex({ products }: { products: Product[] }) {
           </>
         }
       />
+
+      {bulkEditOpen && (
+        <BulkEditModal
+          count={selected.length}
+          onClose={() => setBulkEditOpen(false)}
+          onApply={runBulkEdit}
+        />
+      )}
+      {importOpen && <ImportModal onClose={() => setImportOpen(false)} onImport={runImport} />}
 
       <IndexShell
         tabsLabel="Filter products"
@@ -320,5 +391,172 @@ export function ProductsIndex({ products }: { products: Product[] }) {
         )}
       </IndexShell>
     </div>
+  );
+}
+
+/** Bulk-edit modal (Phase 4) — apply one set of changes across the selected products. */
+function BulkEditModal({
+  count,
+  onClose,
+  onApply,
+}: {
+  count: number;
+  onClose: () => void;
+  onApply: (edit: BulkProductEdit) => void;
+}) {
+  const [status, setStatus] = useState<"" | "active" | "draft">("");
+  const [productType, setProductType] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [addTags, setAddTags] = useState("");
+  const [removeTags, setRemoveTags] = useState("");
+  const [pricePct, setPricePct] = useState("");
+
+  const splitTags = (s: string) => s.split(",").map((t) => t.trim()).filter(Boolean);
+
+  function apply() {
+    const edit: BulkProductEdit = {};
+    if (status) edit.status = status;
+    if (productType.trim()) edit.productType = productType.trim();
+    if (vendor.trim()) edit.vendor = vendor.trim();
+    if (splitTags(addTags).length) edit.addTags = splitTags(addTags);
+    if (splitTags(removeTags).length) edit.removeTags = splitTags(removeTags);
+    const pct = Number(pricePct);
+    if (pricePct.trim() && Number.isFinite(pct) && pct !== 0) edit.priceAdjustPct = pct;
+    onApply(edit);
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Edit ${count} product${count === 1 ? "" : "s"}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={apply}>
+            Apply
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+          Only the fields you fill in are changed; the rest are left as-is.
+        </p>
+        <Field label="Status">
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as "" | "active" | "draft")}
+          >
+            <option value="">No change</option>
+            <option value="active">Active</option>
+            <option value="draft">Draft</option>
+          </select>
+        </Field>
+        <Field label="Product type">
+          <Input value={productType} onChange={(e) => setProductType(e.target.value)} placeholder="No change" />
+        </Field>
+        <Field label="Vendor">
+          <Input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="No change" />
+        </Field>
+        <Field label="Add tags" help="Comma-separated">
+          <Input value={addTags} onChange={(e) => setAddTags(e.target.value)} placeholder="e.g. sale, new" />
+        </Field>
+        <Field label="Remove tags" help="Comma-separated">
+          <Input value={removeTags} onChange={(e) => setRemoveTags(e.target.value)} />
+        </Field>
+        <Field label="Adjust prices %" help="e.g. 10 raises by 10%, −15 cuts by 15%">
+          <Input mono value={pricePct} onChange={(e) => setPricePct(e.target.value)} placeholder="0" />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+/** CSV import modal (Phase 4) — paste CSV or pick a .csv file, then upsert by handle. */
+function ImportModal({
+  onClose,
+  onImport,
+}: {
+  onClose: () => void;
+  onImport: (csv: string, done: (errors: string[]) => void) => void;
+}) {
+  const [text, setText] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    file.text().then(setText);
+  }
+
+  function submit() {
+    if (!text.trim()) {
+      setErrors(["Paste CSV or choose a file first."]);
+      return;
+    }
+    setBusy(true);
+    setErrors([]);
+    onImport(text, (errs) => {
+      setBusy(false);
+      if (errs.length) setErrors(errs);
+      else onClose();
+    });
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Import products"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={submit} loading={busy}>
+            Import
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+          Columns: <code>handle, title, price</code> (required) plus optional{" "}
+          <code>description, status, productType, vendor, tags, compareAtPrice, sku, barcode, quantity</code>.
+          Existing handles are updated; new ones are created. One primary variant per row.
+        </p>
+        <input type="file" accept=".csv,text/csv" onChange={pickFile} aria-label="Choose CSV file" />
+        <textarea
+          className="input"
+          rows={8}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="…or paste CSV here"
+          style={{ resize: "vertical", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}
+        />
+        {errors.length > 0 && (
+          <div
+            style={{
+              maxHeight: 140,
+              overflow: "auto",
+              fontSize: "var(--text-xs)",
+              color: "var(--critical)",
+              background: "var(--critical-bg)",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-2) var(--space-3)",
+            }}
+          >
+            {errors.map((er, i) => (
+              <div key={i}>{er}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

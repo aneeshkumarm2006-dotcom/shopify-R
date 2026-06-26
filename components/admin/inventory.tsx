@@ -2,9 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { InventoryAdjustment, InventoryReason } from "@/types";
+import type { InventoryAdjustment, InventoryReason, Location } from "@/types";
 import type { InventoryRow } from "@/lib/data";
 import { adjustStock } from "@/app/(admin)/inventory/actions";
+import { setInventoryLevelAction } from "@/app/(admin)/locations/actions";
+import Link from "next/link";
 import {
   Button,
   EmptyState,
@@ -48,9 +50,11 @@ const REASONS: { value: InventoryReason; label: string }[] = [
 export function Inventory({
   rows,
   adjustments,
+  locations = [],
 }: {
   rows: InventoryRow[];
   adjustments: InventoryAdjustment[];
+  locations?: Location[];
 }) {
   const toast = useToast();
   const router = useRouter();
@@ -79,6 +83,28 @@ export function Inventory({
         reason: "correction",
       });
       if (!res.ok) toast("Couldn't update stock", { tone: "critical" });
+    });
+  }
+
+  /** Set a specific location's stock (Phase 6); the sellable total resyncs server-side. */
+  function setLevel(variantId: string, locationId: string, amount: number) {
+    const row = byVariant.get(variantId);
+    if (!row) return;
+    setAdjustOpen(false);
+    startTransition(async () => {
+      const res = await setInventoryLevelAction({
+        productId: row.productId,
+        variantId,
+        locationId,
+        quantity: amount,
+      });
+      if (res.ok) {
+        if (res.total !== undefined) setQty((q) => ({ ...q, [variantId]: res.total! }));
+        toast("Location stock updated");
+        router.refresh();
+      } else {
+        toast("Couldn't update location stock", { tone: "critical" });
+      }
     });
   }
 
@@ -140,9 +166,14 @@ export function Inventory({
       <PageHeader
         title="Inventory"
         actions={
-          <Button variant="primary" icon="plus" onClick={() => setAdjustOpen(true)}>
-            Adjust stock
-          </Button>
+          <>
+            <Link href="/locations" className="btn btn-md btn-default">
+              Locations
+            </Link>
+            <Button variant="primary" icon="plus" onClick={() => setAdjustOpen(true)}>
+              Adjust stock
+            </Button>
+          </>
         }
       />
 
@@ -257,6 +288,8 @@ export function Inventory({
         onClose={() => setAdjustOpen(false)}
         rows={rows}
         onApply={applyAdjustment}
+        onSetLevel={setLevel}
+        locations={locations}
         currentQty={qty}
       />
 
@@ -340,6 +373,8 @@ function AdjustStockModal({
   rows,
   currentQty,
   onApply,
+  onSetLevel,
+  locations,
 }: {
   open: boolean;
   onClose: () => void;
@@ -352,16 +387,27 @@ function AdjustStockModal({
     reason: InventoryReason,
     nextQty: number,
   ) => void;
+  onSetLevel: (variantId: string, locationId: string, amount: number) => void;
+  locations: Location[];
 }) {
   const [variantId, setVariantId] = useState(rows[0]?.variant.id ?? "");
   const [mode, setMode] = useState<"add" | "set">("add");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState<InventoryReason>("restock");
   const [note, setNote] = useState("");
+  // "" → adjust the sellable total (existing behavior); a location id → set that
+  // location's stock (Phase 6), which resyncs the total server-side.
+  const [locationId, setLocationId] = useState("");
+  const multiLocation = locations.length > 1;
 
   const current = currentQty[variantId] ?? 0;
   const n = parseInt(amount || "0", 10) || 0;
   const resulting = mode === "set" ? n : Math.max(0, current + n);
+
+  function apply() {
+    if (locationId) onSetLevel(variantId, locationId, n);
+    else onApply(variantId, mode, n, reason, resulting);
+  }
 
   return (
     <Modal
@@ -377,9 +423,9 @@ function AdjustStockModal({
           <Button
             variant="primary"
             disabled={!variantId || amount === ""}
-            onClick={() => onApply(variantId, mode, n, reason, resulting)}
+            onClick={apply}
           >
-            Apply adjustment
+            {locationId ? "Set location stock" : "Apply adjustment"}
           </Button>
         </>
       }
@@ -395,6 +441,18 @@ function AdjustStockModal({
             }))}
           />
         </Field>
+        {multiLocation && (
+          <Field label="Location">
+            <Select
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              options={[
+                { value: "", label: "All locations (sellable total)" },
+                ...locations.map((l) => ({ value: l._id, label: l.name + (l.isDefault ? " · default" : "") })),
+              ]}
+            />
+          </Field>
+        )}
         <div
           style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}
         >

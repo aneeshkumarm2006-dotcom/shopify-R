@@ -41,8 +41,38 @@ export function storeOrigin(subdomain: string): string {
   return `${origin}${storePath(subdomain)}`;
 }
 
-/** `$1,234.00` — two-decimal money with a leading currency symbol. */
+/**
+ * Supported presentment currencies (Phase 2). Display only — there is no FX; a store
+ * picks ONE currency. The symbol is used for compact UI; the ISO code drives
+ * `Intl.NumberFormat` for correct symbol placement and decimals.
+ */
+export const CURRENCIES: { code: string; symbol: string; label: string }[] = [
+  { code: "USD", symbol: "$", label: "US Dollar" },
+  { code: "EUR", symbol: "€", label: "Euro" },
+  { code: "GBP", symbol: "£", label: "British Pound" },
+  { code: "CAD", symbol: "$", label: "Canadian Dollar" },
+  { code: "AUD", symbol: "$", label: "Australian Dollar" },
+  { code: "INR", symbol: "₹", label: "Indian Rupee" },
+  { code: "JPY", symbol: "¥", label: "Japanese Yen" },
+];
+
+const ISO_CODE = /^[A-Z]{3}$/;
+
+/**
+ * `$1,234.00` — two-decimal money. `currency` may be either a bare display symbol
+ * (e.g. "$", the back-compat path) OR an ISO-4217 code (e.g. "USD", "EUR"). When an
+ * ISO code is given, `Intl.NumberFormat` renders the correct symbol + placement +
+ * decimals (e.g. JPY shows no decimals); the `en-US` locale is pinned so server and
+ * client agree (no hydration drift).
+ */
 export function money(amount: number, currency = "$"): string {
+  if (ISO_CODE.test(currency)) {
+    try {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+    } catch {
+      /* unknown code → fall through to symbol-prefix formatting */
+    }
+  }
   return (
     currency +
     amount.toLocaleString("en-US", {
@@ -50,6 +80,14 @@ export function money(amount: number, currency = "$"): string {
       maximumFractionDigits: 2,
     })
   );
+}
+
+/**
+ * The token to pass to `money()` for a store: the ISO `currencyCode` when set
+ * (multi-currency), otherwise the legacy `currency` symbol, otherwise "$".
+ */
+export function storeCurrency(settings?: { currency?: string; currencyCode?: string }): string {
+  return settings?.currencyCode?.trim() || settings?.currency?.trim() || "$";
 }
 
 /** `Jun 6, 2026` */

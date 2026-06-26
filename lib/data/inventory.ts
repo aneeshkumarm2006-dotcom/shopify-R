@@ -2,6 +2,7 @@ import type { InventoryAdjustment, InventoryReason, Product, Variant } from "@/t
 import { mockInventoryAdjustments, mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, InventoryAdjustments, Products } from "@/lib/db";
+import { decrementDefaultLevel } from "./locations";
 
 /** A flat, per-variant inventory view derived from products (PRD §6.5). */
 export interface InventoryRow {
@@ -191,5 +192,11 @@ export async function decrementInventory(
       delta: -Math.abs(line.quantity),
       orderId,
     });
+    // Keep the per-location breakdown in step by drawing from the default location.
+    try {
+      await decrementDefaultLevel(storeId, line.productId, line.variantId, line.quantity);
+    } catch {
+      /* best-effort: the authoritative aggregate is already decremented above */
+    }
   }
 }

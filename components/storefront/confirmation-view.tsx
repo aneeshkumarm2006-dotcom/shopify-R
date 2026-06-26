@@ -15,6 +15,26 @@ const SETTLEMENT_LABEL: Record<NonNullable<PlacedOrder["settlementMethod"]>, str
   in_store: "Pay in store",
 };
 
+/** One label/value row in the confirmation summary breakdown. */
+function ConfirmLine({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 8,
+        fontSize: "var(--text-base)",
+        color: accent ? "var(--accent-pressed)" : "var(--text)",
+      }}
+    >
+      <span>{label}</span>
+      <span className="mono" style={{ whiteSpace: "nowrap", color: accent ? undefined : "var(--text-strong)" }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 /**
  * Order confirmation (DESIGN §5.4) — success state with the mono order number, a
  * summary echo, and a calm "what happens next" timeline (payment is arranged offline
@@ -98,23 +118,26 @@ export function ConfirmationView() {
             </div>
           ))}
           <hr className="divider" style={{ margin: "12px 0" }} />
-          {order.discount && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 8,
-                fontSize: "var(--text-base)",
-                color: "var(--accent-pressed)",
-              }}
-            >
-              <span>Discount · {order.discount.code}</span>
-              <span className="mono" style={{ whiteSpace: "nowrap" }}>
-                −{money(order.discount.amount, order.currency)}
-              </span>
-            </div>
+          {typeof order.subtotal === "number" && (
+            <ConfirmLine label="Subtotal" value={money(order.subtotal, order.currency)} />
           )}
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
+          {order.discount && (
+            <ConfirmLine
+              label={`Discount · ${order.discount.code}`}
+              value={`−${money(order.discount.amount, order.currency)}`}
+              accent
+            />
+          )}
+          {order.shipping && (
+            <ConfirmLine
+              label={`Shipping${order.shipping.method ? ` · ${order.shipping.method}` : ""}`}
+              value={order.shipping.amount > 0 ? money(order.shipping.amount, order.currency) : "Free"}
+            />
+          )}
+          {order.tax && order.tax.amount > 0 && (
+            <ConfirmLine label={order.tax.label} value={money(order.tax.amount, order.currency)} />
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
             <span style={{ fontWeight: 600, color: "var(--warm-900)" }}>Total</span>
             <span className="mono" style={{ fontWeight: 600, color: "var(--warm-900)" }}>
               {money(order.total, order.currency)}

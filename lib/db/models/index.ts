@@ -9,10 +9,26 @@ export {
   UserModel,
   StoreModel,
   ThemeConfigModel,
+  ThemeVersionModel,
+  StoreMemberModel,
+  LocationModel,
   SubscriptionModel,
 } from "./store";
-export { ProductModel, CollectionModel, InventoryAdjustmentModel } from "./catalog";
-export { CartModel, OrderModel, CustomerModel, DiscountModel } from "./commerce";
+export {
+  ProductModel,
+  CollectionModel,
+  ReviewModel,
+  InventoryAdjustmentModel,
+  InventoryLevelModel,
+} from "./catalog";
+export {
+  CartModel,
+  OrderModel,
+  CustomerModel,
+  DiscountModel,
+  GiftCardModel,
+  CampaignModel,
+} from "./commerce";
 export {
   EventModel,
   ErrorModel,

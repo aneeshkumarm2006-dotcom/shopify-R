@@ -5,10 +5,27 @@ import type {
   Order,
   OrderLineItem,
   PaymentStatus,
+  TimelineEntry,
+  TimelineKind,
 } from "@/types";
 import { mockOrders } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Orders } from "@/lib/db";
+
+/** Build a timeline entry (Phase 6) — append-only order activity. */
+export function timelineEntry(
+  kind: TimelineKind,
+  message: string,
+  actorId?: string | null,
+): TimelineEntry {
+  return {
+    id: `tl_${Math.random().toString(36).slice(2, 10)}`,
+    kind,
+    message,
+    at: new Date().toISOString(),
+    actorId: actorId ?? null,
+  };
+}
 
 /** Orders for a store, newest first (PRD §6.7). */
 export async function getOrders(storeId: string): Promise<Order[]> {
@@ -53,10 +70,15 @@ export type NewOrder = Omit<Order, "_id" | "createdAt" | "updatedAt">;
 
 /** Persist a new order. In mock mode (no DB) it echoes a plausible record. */
 export async function createOrder(storeId: string, input: NewOrder): Promise<Order> {
+  // Seed the timeline with a creation entry when the caller didn't supply one.
+  const seeded: NewOrder = {
+    ...input,
+    timeline: input.timeline ?? [timelineEntry("created", "Order placed")],
+  };
   if (!isDbConfigured()) {
     const stamp = new Date().toISOString();
     return resolve({
-      ...input,
+      ...seeded,
       _id: `o_${Math.random().toString(36).slice(2, 10)}`,
       storeId,
       createdAt: stamp,
@@ -64,7 +86,7 @@ export async function createOrder(storeId: string, input: NewOrder): Promise<Ord
     });
   }
   // `storeId` is forced by the repository; strip the caller's copy to be explicit.
-  const { storeId: _ignored, ...rest } = input;
+  const { storeId: _ignored, ...rest } = seeded;
   void _ignored;
   return Orders.create(storeId, { ...rest });
 }
@@ -78,18 +100,49 @@ export async function updateOrderStatus(
   storeId: string,
   id: string,
   patch: { paymentStatus?: PaymentStatus; fulfillmentStatus?: FulfillmentStatus },
+  actorId?: string | null,
 ): Promise<Order | null> {
   const set: Record<string, unknown> = {};
-  if (patch.paymentStatus) set.paymentStatus = patch.paymentStatus;
-  if (patch.fulfillmentStatus) set.fulfillmentStatus = patch.fulfillmentStatus;
+  const entries: TimelineEntry[] = [];
+  if (patch.paymentStatus) {
+    set.paymentStatus = patch.paymentStatus;
+    entries.push(timelineEntry("payment", `Payment marked ${patch.paymentStatus}`, actorId));
+  }
+  if (patch.fulfillmentStatus) {
+    set.fulfillmentStatus = patch.fulfillmentStatus;
+    entries.push(timelineEntry("status", `Fulfillment set to ${patch.fulfillmentStatus.replace(/_/g, " ")}`, actorId));
+  }
   if (Object.keys(set).length === 0) return getOrder(storeId, id);
 
   if (!isDbConfigured()) {
     const found = scoped(mockOrders, storeId).find((o) => o._id === id);
     if (!found) return null;
-    return resolve({ ...found, ...patch, updatedAt: new Date().toISOString() });
+    return resolve({
+      ...found,
+      ...patch,
+      timeline: [...(found.timeline ?? []), ...entries],
+      updatedAt: new Date().toISOString(),
+    });
   }
-  return Orders.updateOne(storeId, { _id: id }, { $set: set });
+  return Orders.updateOne(storeId, { _id: id }, { $set: set, $push: { timeline: { $each: entries } } });
+}
+
+/** Append a free-text merchant/staff note to an order's timeline (Phase 6). */
+export async function addOrderNote(
+  storeId: string,
+  id: string,
+  body: string,
+  actorId?: string | null,
+): Promise<Order | null> {
+  const text = body.trim();
+  if (!text) return getOrder(storeId, id);
+  const entry = timelineEntry("note", text, actorId);
+  if (!isDbConfigured()) {
+    const found = scoped(mockOrders, storeId).find((o) => o._id === id);
+    if (!found) return null;
+    return resolve({ ...found, timeline: [...(found.timeline ?? []), entry], updatedAt: new Date().toISOString() });
+  }
+  return Orders.updateOne(storeId, { _id: id }, { $push: { timeline: entry } });
 }
 
 /**
@@ -122,6 +175,8 @@ export interface FulfillInput {
   trackingNumber?: string;
   carrier?: string;
   trackingUrl?: string;
+  /** Merchant/staff user recording the shipment (timeline attribution). */
+  actorId?: string | null;
 }
 
 export class FulfillmentError extends Error {
@@ -187,6 +242,12 @@ export async function createFulfillment(
   };
   const fulfillments = [...(order.fulfillments ?? []), fulfillment];
   const fulfillmentStatus = rollupFulfillment(lineItems);
+  const shipped = recordLines.reduce((s, l) => s + l.quantity, 0);
+  const entry = timelineEntry(
+    "fulfillment",
+    `Shipped ${shipped} item${shipped === 1 ? "" : "s"}${fulfillment.carrier ? ` via ${fulfillment.carrier}` : ""}${fulfillment.trackingNumber ? ` (${fulfillment.trackingNumber})` : ""}`,
+    input.actorId,
+  );
 
   if (!isDbConfigured()) {
     return resolve({
@@ -194,12 +255,13 @@ export async function createFulfillment(
       lineItems,
       fulfillments,
       fulfillmentStatus,
+      timeline: [...(order.timeline ?? []), entry],
       updatedAt: new Date().toISOString(),
     });
   }
   return Orders.updateOne(
     storeId,
     { _id: orderId },
-    { $set: { lineItems, fulfillments, fulfillmentStatus } },
+    { $set: { lineItems, fulfillments, fulfillmentStatus }, $push: { timeline: entry } },
   );
 }

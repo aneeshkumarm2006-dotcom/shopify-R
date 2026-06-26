@@ -32,6 +32,7 @@ export interface BuilderTopbarProps {
   onDevice: (d: DeviceMode) => void;
   saveState: SaveState;
   onSave: () => void;
+  onHistory: () => void;
   onExit: () => void;
   onPublish: () => void;
 }
@@ -44,6 +45,7 @@ export function BuilderTopbar({
   onDevice,
   saveState,
   onSave,
+  onHistory,
   onExit,
   onPublish,
 }: BuilderTopbarProps) {
@@ -118,6 +120,9 @@ export function BuilderTopbar({
               : "Unsaved changes"}
         </span>
 
+        <Button variant="ghost" size="sm" icon="clock" onClick={onHistory} aria-label="Version history">
+          History
+        </Button>
         <Button
           variant="default"
           size="sm"

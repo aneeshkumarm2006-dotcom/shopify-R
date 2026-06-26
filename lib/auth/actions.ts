@@ -115,6 +115,12 @@ export async function signUpCredentials(
     if (error instanceof EmailTakenError) {
       return { error: "An account with that email already exists — sign in instead." };
     }
+    // A duplicate-key error (E11000) here means a unique index collided — most
+    // commonly a concurrent signup on the same email, or a misconfigured index.
+    // Surface a friendly message instead of crashing the signup with a 500.
+    if (typeof error === "object" && error !== null && (error as { code?: number }).code === 11000) {
+      return { error: "We couldn’t create your account just now — please try again." };
+    }
     throw error;
   }
 

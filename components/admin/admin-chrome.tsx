@@ -68,8 +68,12 @@ const NAV: NavItem[] = [
   { label: "Inventory", icon: "inventory", href: "/inventory" },
   { label: "Customers", icon: "customers", href: "/customers" },
   { label: "Discounts", icon: "tag", href: "/discounts" },
+  { label: "Gift Cards", icon: "sparkle", href: "/gift-cards" },
+  { label: "Marketing", icon: "mail", href: "/marketing" },
+  { label: "Reviews", icon: "star", href: "/reviews" },
   { label: "Online Store", icon: "store", href: "/builder" },
   { label: "Analytics", icon: "analytics", href: "/analytics" },
+  { label: "Staff", icon: "customers", href: "/staff" },
   { label: "Settings", icon: "settings", href: "/settings" },
 ];
 

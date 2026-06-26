@@ -2,6 +2,7 @@ import type { Store, SubscriptionPlan, User } from "@/types";
 import { mockStore, mockUser } from "./mocks";
 import { resolve } from "./_util";
 import { getSubscription } from "./store";
+import { linkAndListMemberStores } from "./staff";
 import { storeCapForPlan } from "@/lib/payments/billing";
 import {
   isDbConfigured,
@@ -88,21 +89,47 @@ export async function getStoreCapStatus(userId: string): Promise<StoreCapStatus>
  */
 export async function resolveActiveStore(userId: string): Promise<Store | null> {
   await dbConnect();
-  const user = await UserModel.findById(userId).lean<{ activeStoreId?: string } | null>();
+  const user = await UserModel.findById(userId).lean<{ activeStoreId?: string; email?: string } | null>();
   if (!user) return null;
+
+  // Stores the user can reach: owned (ownerId) OR an active membership (Phase 6 RBAC).
+  const memberStoreIds = new Set(await linkAndListMemberStores(userId, user.email ?? ""));
+  const accessible = (s: Store | null): s is Store =>
+    Boolean(s) && (s!.ownerId === userId || memberStoreIds.has(s!._id));
 
   if (user.activeStoreId) {
     const active = serializeOrNull<Store>(await StoreModel.findById(user.activeStoreId).lean());
-    if (active && active.ownerId === userId) return active;
+    if (accessible(active)) return active;
   }
 
-  // Self-heal: dangling/foreign activeStoreId → first owned store, and persist it.
-  const first = serializeOrNull<Store>(
+  // Self-heal: dangling/foreign activeStoreId → first owned store, else first member store.
+  const firstOwned = serializeOrNull<Store>(
     await StoreModel.findOne({ ownerId: userId }).sort({ createdAt: 1 }).lean(),
   );
-  if (!first) return null;
-  await UserModel.findByIdAndUpdate(userId, { activeStoreId: first._id });
-  return first;
+  const fallback =
+    firstOwned ??
+    (memberStoreIds.size
+      ? serializeOrNull<Store>(
+          await StoreModel.findOne({ _id: { $in: [...memberStoreIds] } }).sort({ createdAt: 1 }).lean(),
+        )
+      : null);
+  if (!fallback) return null;
+  await UserModel.findByIdAndUpdate(userId, { activeStoreId: fallback._id });
+  return fallback;
+}
+
+/** Every store a user can access — owned plus active memberships (Phase 6 switcher). */
+export async function getAccessibleStores(userId: string): Promise<Store[]> {
+  if (!isDbConfigured()) return resolve(mockStore.ownerId === userId ? [mockStore] : []);
+  await dbConnect();
+  const user = await UserModel.findById(userId).lean<{ email?: string } | null>();
+  const memberStoreIds = await linkAndListMemberStores(userId, user?.email ?? "");
+  const stores = serializeMany<Store>(
+    await StoreModel.find({ $or: [{ ownerId: userId }, { _id: { $in: memberStoreIds } }] })
+      .sort({ createdAt: 1 })
+      .lean(),
+  );
+  return stores;
 }
 
 /**
@@ -115,7 +142,13 @@ export async function setActiveStore(userId: string, storeId: string): Promise<b
   if (!isDbConfigured()) return mockStore._id === storeId;
   await dbConnect();
   const store = serializeOrNull<Store>(await StoreModel.findById(storeId).lean());
-  if (!store || store.ownerId !== userId) return false;
+  if (!store) return false;
+  // Authorized when the user owns the store OR is an active member of it (Phase 6).
+  if (store.ownerId !== userId) {
+    const user = await UserModel.findById(userId).lean<{ email?: string } | null>();
+    const memberStoreIds = await linkAndListMemberStores(userId, user?.email ?? "");
+    if (!memberStoreIds.includes(storeId)) return false;
+  }
   await UserModel.findByIdAndUpdate(userId, { activeStoreId: storeId });
   return true;
 }

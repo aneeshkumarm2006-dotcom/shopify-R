@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Customer, Order } from "@/types";
-import { Avatar, Card, Icon, PageHeader, Pill } from "@/components/ui";
+import { Avatar, Button, Card, Icon, Input, PageHeader, Pill, useToast } from "@/components/ui";
 import { fulfillmentPill, paymentPill } from "@/components/admin/shared";
+import { normalizeTag } from "@/lib/data/segments";
+import { updateCustomerTags } from "@/app/(admin)/customers/actions";
 import { fmtDate, money } from "@/lib/format";
 
 /**
@@ -143,7 +146,9 @@ export function CustomerDetail({
           )}
         </Card>
 
-        {/* Saved addresses */}
+        {/* Right column: tags + saved addresses */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+        <TagEditor customerId={customer._id} initial={customer.tags ?? []} />
         <Card title="Saved addresses" pad={false}>
           {customer.addresses.length === 0 ? (
             <div
@@ -208,7 +213,92 @@ export function CustomerDetail({
             ))
           )}
         </Card>
+        </div>
       </div>
     </div>
+  );
+}
+
+/** Segmentation-tag editor (Phase 5) — add/remove tags used by marketing segments. */
+function TagEditor({ customerId, initial }: { customerId: string; initial: string[] }) {
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+  const [tags, setTags] = useState<string[]>(initial);
+  const [input, setInput] = useState("");
+
+  function save(next: string[]) {
+    startTransition(async () => {
+      const res = await updateCustomerTags(customerId, next);
+      if (!res.ok) {
+        toast(res.error ?? "Couldn't update tags", { tone: "critical" });
+        return;
+      }
+      setTags(res.tags ?? next);
+    });
+  }
+  function add() {
+    const tag = normalizeTag(input);
+    if (!tag || tags.includes(tag)) {
+      setInput("");
+      return;
+    }
+    const next = [...tags, tag];
+    setInput("");
+    save(next);
+  }
+  function remove(tag: string) {
+    save(tags.filter((t) => t !== tag));
+  }
+
+  return (
+    <Card title="Tags">
+      {tags.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "var(--space-3)" }}>
+          {tags.map((t) => (
+            <span
+              key={t}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 8px",
+                fontSize: "var(--text-xs)",
+                border: "1px solid var(--border)",
+                borderRadius: 999,
+                background: "var(--surface-subtle)",
+                color: "var(--text-strong)",
+              }}
+            >
+              {t}
+              <button
+                type="button"
+                aria-label={`Remove ${t}`}
+                onClick={() => remove(t)}
+                disabled={pending}
+                style={{ border: "none", background: "none", cursor: "pointer", lineHeight: 0, color: "var(--text-muted)" }}
+              >
+                <Icon name="x" size={12} aria-hidden />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Add a tag…"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <Button variant="default" onClick={add} loading={pending} disabled={!input.trim()}>
+          Add
+        </Button>
+      </div>
+    </Card>
   );
 }

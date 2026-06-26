@@ -2,7 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Collection, Product } from "@/types";
+import type {
+  Collection,
+  CollectionKind,
+  CollectionRule,
+  CollectionRuleField,
+  CollectionRuleOp,
+  Product,
+} from "@/types";
 import {
   Button,
   Card,
@@ -48,6 +55,26 @@ export function CollectionEditor({
   const [selected, setSelected] = useState<string[]>(collection?.productIds ?? []);
   const [query, setQuery] = useState("");
 
+  // Smart-collection state (Phase 4). `kind` toggles curated vs rule-based membership.
+  const [kind, setKind] = useState<CollectionKind>(collection?.kind ?? "manual");
+  const [match, setMatch] = useState<"all" | "any">(collection?.rules?.match ?? "all");
+  const [conditions, setConditions] = useState<CollectionRule[]>(
+    collection?.rules?.conditions ?? [{ field: "tag", op: "equals", value: "" }],
+  );
+
+  function setCondition(i: number, patch: Partial<CollectionRule>) {
+    setConditions((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+    mark();
+  }
+  function addCondition() {
+    setConditions((cs) => [...cs, { field: "tag", op: "equals", value: "" }]);
+    mark();
+  }
+  function removeCondition(i: number) {
+    setConditions((cs) => (cs.length <= 1 ? cs : cs.filter((_, idx) => idx !== i)));
+    mark();
+  }
+
   const mark = () => setDirty(true);
   const previewBase = `${storeDomain(storeSubdomain)}/collections/`;
 
@@ -76,11 +103,21 @@ export function CollectionEditor({
       toast("Add a handle first", { tone: "critical" });
       return;
     }
+    const cleanConditions = conditions.filter((c) => c.value.trim());
+    if (kind === "smart" && cleanConditions.length === 0) {
+      toast("Add at least one rule for a smart collection", { tone: "critical" });
+      return;
+    }
     startTransition(async () => {
       const res = await saveCollection(collection?._id ?? null, {
         title: title.trim(),
         handle: handle.trim(),
-        productIds: selected,
+        kind,
+        // Manual keeps the curated list; smart stores rules and clears the list.
+        productIds: kind === "manual" ? selected : [],
+        ...(kind === "smart"
+          ? { rules: { match, conditions: cleanConditions } }
+          : { rules: undefined }),
       });
       if (!res.ok) {
         toast(res.error ?? "Couldn't save", { tone: "critical" });
@@ -161,15 +198,94 @@ export function CollectionEditor({
           alignItems: "start",
         }}
       >
-        {/* Products membership */}
-        <Card
-          title="Products"
-          action={
-            <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-              {selected.length} selected
-            </span>
-          }
-        >
+        {/* Membership: smart rules (auto) or manual curation */}
+        {kind === "smart" ? (
+          <Card title="Conditions">
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: "var(--space-3)" }}>
+              Products matching{" "}
+              <select
+                className="input"
+                value={match}
+                onChange={(e) => {
+                  setMatch(e.target.value as "all" | "any");
+                  mark();
+                }}
+                style={{ display: "inline-block", width: "auto", padding: "2px 8px", margin: "0 4px" }}
+                aria-label="Match all or any"
+              >
+                <option value="all">all</option>
+                <option value="any">any</option>
+              </select>{" "}
+              of these conditions are added automatically.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              {conditions.map((c, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <select
+                    className="input"
+                    value={c.field}
+                    onChange={(e) => setCondition(i, { field: e.target.value as CollectionRuleField })}
+                    style={{ width: 130 }}
+                    aria-label="Field"
+                  >
+                    <option value="tag">Tag</option>
+                    <option value="productType">Type</option>
+                    <option value="vendor">Vendor</option>
+                    <option value="title">Title</option>
+                    <option value="price">Price</option>
+                  </select>
+                  <select
+                    className="input"
+                    value={c.op}
+                    onChange={(e) => setCondition(i, { op: e.target.value as CollectionRuleOp })}
+                    style={{ width: 120 }}
+                    aria-label="Operator"
+                  >
+                    {(c.field === "price"
+                      ? [["equals", "="], ["not_equals", "≠"], ["gt", ">"], ["lt", "<"]]
+                      : [
+                          ["equals", "is"],
+                          ["not_equals", "is not"],
+                          ["contains", "contains"],
+                          ["starts_with", "starts with"],
+                        ]
+                    ).map(([v, label]) => (
+                      <option key={v} value={v}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    value={c.value}
+                    onChange={(e) => setCondition(i, { value: e.target.value })}
+                    placeholder={c.field === "price" ? "0.00" : "value"}
+                    aria-label="Value"
+                  />
+                  <IconButton
+                    name="trash"
+                    size={32}
+                    aria-label="Remove condition"
+                    disabled={conditions.length <= 1}
+                    onClick={() => removeCondition(i)}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <Button variant="ghost" icon="plus" onClick={addCondition}>
+                Add condition
+              </Button>
+            </div>
+          </Card>
+        ) : (
+          <Card
+            title="Products"
+            action={
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                {selected.length} selected
+              </span>
+            }
+          >
           <div style={{ marginBottom: "var(--space-3)" }}>
             <Input
               value={query}
@@ -228,12 +344,38 @@ export function CollectionEditor({
               })}
             </div>
           )}
-        </Card>
+          </Card>
+        )}
 
         {/* Details */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
           <Card title="Details">
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+              <Field label="Membership">
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["manual", "smart"] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => {
+                        setKind(k);
+                        mark();
+                      }}
+                      className="btn btn-sm"
+                      aria-pressed={kind === k}
+                      style={{
+                        flex: 1,
+                        border: `1px solid ${kind === k ? "var(--accent)" : "var(--border)"}`,
+                        background: kind === k ? "var(--info-bg)" : "transparent",
+                        color: "var(--text-strong)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {k === "manual" ? "Manual" : "Smart (rules)"}
+                    </button>
+                  ))}
+                </div>
+              </Field>
               <Field label="Title">
                 {(p) => (
                   <Input

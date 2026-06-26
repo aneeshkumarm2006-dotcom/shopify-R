@@ -15,7 +15,11 @@ import {
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
 import { PublishDialog } from "@/components/admin/publish-dialog";
-import { publishStoreAction, unpublishStoreAction } from "@/app/(admin)/publish/actions";
+import {
+  publishStoreAction,
+  unpublishStoreAction,
+  scheduleStorePublishAction,
+} from "@/app/(admin)/publish/actions";
 import { storeDomain, storeOrigin } from "@/lib/format";
 
 /**
@@ -37,6 +41,30 @@ export function Publish({
   const [status, setStatus] = useState(store.status);
   const [publishOpen, setPublishOpen] = useState(false);
   const [unpublishOpen, setUnpublishOpen] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState<string | null>(store.scheduledPublishAt ?? null);
+  const [scheduleInput, setScheduleInput] = useState("");
+
+  function schedule() {
+    if (!scheduleInput) return;
+    const iso = new Date(scheduleInput).toISOString();
+    startTransition(async () => {
+      const res = await scheduleStorePublishAction(iso);
+      if (!res.ok) {
+        toast(res.error ?? "Couldn't schedule", { tone: "critical" });
+        return;
+      }
+      setScheduledAt(iso);
+      setScheduleInput("");
+      toast("Publish scheduled");
+    });
+  }
+  function cancelSchedule() {
+    startTransition(async () => {
+      await scheduleStorePublishAction(null);
+      setScheduledAt(null);
+      toast("Schedule cancelled");
+    });
+  }
 
   const pill = storeStatusPill(status);
 
@@ -155,12 +183,53 @@ export function Publish({
         </div>
       )}
 
+      {/* Scheduled publish (Phase 6) — only meaningful while not yet live. */}
+      {status !== "live" && (
+        <Card title="Schedule publish">
+          {scheduledAt ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+              <Icon name="clock" size={18} style={{ color: "var(--accent-pressed)" }} aria-hidden />
+              <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-strong)" }}>
+                Goes live on <b>{new Date(scheduledAt).toLocaleString()}</b>
+              </span>
+              <Button variant="ghost" onClick={cancelSchedule} loading={pending}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-3)" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--text-muted)", marginBottom: 4 }}>
+                  Auto-publish at
+                </label>
+                <input
+                  type="datetime-local"
+                  className="input"
+                  value={scheduleInput}
+                  onChange={(e) => setScheduleInput(e.target.value)}
+                  disabled={!canPublish}
+                />
+              </div>
+              <Button variant="default" onClick={schedule} loading={pending} disabled={!canPublish || !scheduleInput}>
+                Schedule
+              </Button>
+            </div>
+          )}
+          {!canPublish && !scheduledAt && (
+            <p style={{ marginTop: 8, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+              Complete the pre-flight checklist below before scheduling.
+            </p>
+          )}
+        </Card>
+      )}
+
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: "var(--space-5)",
           alignItems: "start",
+          marginTop: status !== "live" ? "var(--space-5)" : 0,
         }}
       >
         <Card title="Pre-flight checklist">

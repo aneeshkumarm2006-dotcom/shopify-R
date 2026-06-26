@@ -3,14 +3,16 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { SettlementMethod } from "@/types";
+import type { SettlementMethod, ShippingSettings, TaxSettings } from "@/types";
 import { Icon } from "@/components/ui/icon";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { availableShippingRates, type ResolvedShippingRate } from "@/lib/data/shipping";
+import { computeTax, taxLabel } from "@/lib/data/tax";
 import { money } from "@/lib/format";
-import { applyDiscount, submitOrder } from "@/app/(store)/actions";
+import { applyDiscount, previewGiftCard, submitOrder } from "@/app/(store)/actions";
 import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 import { stashOrder } from "./order-handoff";
@@ -58,6 +60,19 @@ function discountError(reason?: string): string {
   }
 }
 
+function giftCardErrorCopy(reason?: string): string {
+  switch (reason) {
+    case "expired":
+      return "This gift card has expired.";
+    case "empty":
+      return "This gift card has no balance left.";
+    case "disabled":
+      return "This gift card is no longer active.";
+    default:
+      return "We couldn't find that gift card.";
+  }
+}
+
 /**
  * Checkout (DESIGN §5.4) — two columns: contact + shipping form on the left, a sticky
  * order summary on the right. **Payment is a placeholder only — no real card fields**
@@ -67,21 +82,34 @@ function discountError(reason?: string): string {
  * confirmation page. Prices are re-derived server-side from the catalog (never trusted
  * from the client).
  */
-export function CheckoutView({ settlements }: { settlements: SettlementFlags }) {
+export function CheckoutView({
+  settlements,
+  shippingSettings,
+  taxSettings,
+}: {
+  settlements: SettlementFlags;
+  shippingSettings?: ShippingSettings;
+  taxSettings?: TaxSettings;
+}) {
   const sf = useStorefront();
   const router = useRouter();
   const href = useStoreHref();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    email: "",
-    firstName: "",
-    lastName: "",
-    address: "",
-    city: "",
-    state: "OR",
-    zip: "",
-    phone: "",
+  // Prefill contact from the signed-in shopper (Phase 3), if any.
+  const [form, setForm] = useState(() => {
+    const c = sf?.customer;
+    const [firstName = "", ...rest] = (c?.name ?? "").trim().split(/\s+/);
+    return {
+      email: c?.email ?? "",
+      firstName,
+      lastName: rest.join(" "),
+      address: "",
+      city: "",
+      state: "OR",
+      zip: "",
+      phone: "",
+    };
   });
 
   // Enabled settlement methods, in display order; default to the first.
@@ -89,6 +117,9 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
   const [settlement, setSettlement] = useState<SettlementMethod>(
     () => methods[0] ?? "online",
   );
+  // Chosen shipping rate id ("" → fall back to the first available rate). The price is
+  // always re-resolved SERVER-SIDE in `placeOrder`; this only drives what's displayed.
+  const [shippingRateId, setShippingRateId] = useState<string>("");
 
   // Promo code state. `applied` is the server-validated preview; the authoritative
   // discount is re-computed in `placeOrder`, so this only affects what's DISPLAYED.
@@ -96,6 +127,13 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
   const [applied, setApplied] = useState<{ code: string; amount: number } | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [applying, startApplying] = useTransition();
+
+  // Gift-card state (Phase 4). `giftApplied.applies` is the server-validated preview of
+  // how much the card covers; the authoritative draw-down happens in `placeOrder`.
+  const [giftInput, setGiftInput] = useState("");
+  const [giftApplied, setGiftApplied] = useState<{ code: string; applies: number } | null>(null);
+  const [giftError, setGiftError] = useState<string | null>(null);
+  const [giftBusy, startGift] = useTransition();
 
   if (!sf) return null;
   const { cart, subtotal, currency } = sf;
@@ -105,7 +143,52 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
   // If the cart changed under an applied code, the stale amount can exceed subtotal;
   // clamp the display so the total never goes negative (server re-validates anyway).
   const discountAmount = applied ? Math.min(applied.amount, subtotal) : 0;
-  const total = Math.max(0, subtotal - discountAmount);
+  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+
+  // Shipping + tax PREVIEW (Phase 2). Recomputed from the same pure engines the server
+  // uses, off the live region (state field) + discounted subtotal, so the summary
+  // tracks the form. `placeOrder` re-resolves both authoritatively from store settings.
+  const region = form.state.trim();
+  const rates = availableShippingRates(shippingSettings, {
+    subtotal: discountedSubtotal,
+    region,
+  });
+  const selectedRate: ResolvedShippingRate =
+    rates.find((r) => r.id === shippingRateId) ?? rates[0] ?? { id: "standard", label: "Standard", price: 0 };
+  const shippingTotal = selectedRate.price;
+  const taxTotal = computeTax(taxSettings, {
+    subtotal: discountedSubtotal,
+    shipping: shippingTotal,
+    region,
+  });
+  const total = discountedSubtotal + shippingTotal + taxTotal;
+
+  // Gift card applies against the amount due (after discount/shipping/tax); clamp to the
+  // live total in case the cart changed since the code was applied (server re-draws anyway).
+  const giftCardAmount = giftApplied ? Math.min(giftApplied.applies, total) : 0;
+  const amountDue = Math.max(0, total - giftCardAmount);
+
+  const onApplyGift = () => {
+    const code = giftInput.trim();
+    if (!code) return;
+    setGiftError(null);
+    startGift(async () => {
+      const res = await previewGiftCard(code, total);
+      if (res.ok && res.code && typeof res.applies === "number") {
+        setGiftApplied({ code: res.code, applies: res.applies });
+        setGiftInput(res.code);
+      } else {
+        setGiftApplied(null);
+        setGiftError(giftCardErrorCopy(res.reason));
+      }
+    });
+  };
+
+  const removeGift = () => {
+    setGiftApplied(null);
+    setGiftInput("");
+    setGiftError(null);
+  };
 
   const onApplyCode = () => {
     const code = codeInput.trim();
@@ -172,7 +255,9 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
           quantity: l.quantity,
         })),
         ...(applied ? { discountCode: applied.code } : {}),
+        ...(giftApplied ? { giftCardCode: giftApplied.code } : {}),
         settlementMethod: settlement,
+        shippingRateId: selectedRate.id,
       });
       if (!res.ok) {
         setError(res.error ?? "We couldn't place your order. Please try again.");
@@ -182,10 +267,13 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
       stashOrder({
         orderNumber: res.orderNumber ?? 0,
         email: form.email,
+        subtotal,
         total: res.total ?? total,
         currency,
         items,
         ...(applied ? { discount: { code: applied.code, amount: discountAmount } } : {}),
+        shipping: { method: selectedRate.label, amount: shippingTotal },
+        ...(taxTotal > 0 ? { tax: { label: taxLabel(taxSettings), amount: taxTotal } } : {}),
         settlementMethod: settlement,
       });
       sf.clearCart();
@@ -281,6 +369,17 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
             </Field>
           </div>
 
+          {/* Shipping method (Phase 2) — only shown to choose from when the store
+              configures more than one rate; a single rate rides in the summary line. */}
+          {rates.length > 1 && (
+            <ShippingSelector
+              rates={rates}
+              selectedId={selectedRate.id}
+              currency={currency}
+              onSelect={setShippingRateId}
+            />
+          )}
+
           {/* Settlement method (PRD §6.6) — only the methods the store enables. */}
           {methods.length > 0 && (
             <SettlementSelector
@@ -347,27 +446,47 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
             onRemove={removeCode}
           />
 
+          {/* Gift card (Phase 4) — server-validated preview; drawn down on order. */}
+          <GiftCardCode
+            value={giftInput}
+            onChange={setGiftInput}
+            applied={giftApplied}
+            applying={giftBusy}
+            error={giftError}
+            currency={currency}
+            amount={giftCardAmount}
+            onApply={onApplyGift}
+            onRemove={removeGift}
+          />
+
+          {/* Totals breakdown (Phase 2): subtotal → discount → shipping → tax → total. */}
+          <SummaryLine label="Subtotal" value={money(subtotal, currency)} />
           {applied && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 8,
-                fontSize: "var(--text-base)",
-                color: "var(--accent-pressed)",
-              }}
-            >
-              <span>Discount · {applied.code}</span>
-              <span className="mono" style={{ whiteSpace: "nowrap" }}>
-                −{money(discountAmount, currency)}
-              </span>
-            </div>
+            <SummaryLine
+              label={`Discount · ${applied.code}`}
+              value={`−${money(discountAmount, currency)}`}
+              accent
+            />
+          )}
+          <SummaryLine
+            label={`Shipping${selectedRate.label ? ` · ${selectedRate.label}` : ""}`}
+            value={shippingTotal > 0 ? money(shippingTotal, currency) : "Free"}
+          />
+          {taxTotal > 0 && (
+            <SummaryLine label={taxLabel(taxSettings)} value={money(taxTotal, currency)} />
+          )}
+          {giftCardAmount > 0 && giftApplied && (
+            <SummaryLine
+              label={`Gift card · ${giftApplied.code}`}
+              value={`−${money(giftCardAmount, currency)}`}
+              accent
+            />
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "12px 0 20px" }}>
             <span style={{ fontWeight: 600, color: "var(--warm-900)" }}>Total</span>
             <span className="mono" style={{ fontWeight: 600, fontSize: "var(--text-md)", color: "var(--warm-900)" }}>
-              {money(total, currency)}
+              {money(amountDue, currency)}
             </span>
           </div>
           <Button type="submit" variant="primary" size="lg" pill block loading={isPending}>
@@ -389,6 +508,105 @@ export function CheckoutView({ settlements }: { settlements: SettlementFlags }) 
         </div>
       </form>
     </div>
+  );
+}
+
+/** One label/value row in the order-summary totals breakdown. */
+function SummaryLine({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 8,
+        fontSize: "var(--text-base)",
+        color: accent ? "var(--accent-pressed)" : "var(--text)",
+      }}
+    >
+      <span>{label}</span>
+      <span className="mono" style={{ whiteSpace: "nowrap", color: accent ? undefined : "var(--text-strong)" }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Shipping-rate picker (Phase 2). Rendered only when the store offers more than one
+ * rate; an accessible radio group mirroring the settlement selector, each row showing
+ * the rate label and its price ("Free" when zeroed by a free-shipping threshold).
+ */
+function ShippingSelector({
+  rates,
+  selectedId,
+  currency,
+  onSelect,
+}: {
+  rates: ResolvedShippingRate[];
+  selectedId: string;
+  currency: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <fieldset style={{ marginTop: 24, border: 0, padding: 0 }}>
+      <legend
+        style={{
+          fontSize: "var(--text-sm)",
+          fontWeight: 600,
+          color: "var(--warm-900)",
+          marginBottom: 10,
+          padding: 0,
+        }}
+      >
+        Shipping method
+      </legend>
+      <div style={{ display: "grid", gap: 8 }}>
+        {rates.map((r) => {
+          const checked = selectedId === r.id;
+          return (
+            <label
+              key={r.id}
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "var(--space-3) var(--space-4)",
+                border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                background: checked ? "var(--info-bg)" : "transparent",
+              }}
+            >
+              <span style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="shipping"
+                  value={r.id}
+                  checked={checked}
+                  onChange={() => onSelect(r.id)}
+                  style={{ accentColor: "var(--accent-pressed)" }}
+                />
+                <span style={{ fontSize: "var(--text-base)", color: "var(--text-strong)", fontWeight: 500 }}>
+                  {r.label}
+                </span>
+              </span>
+              <span className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--text-strong)" }}>
+                {r.price > 0 ? money(r.price, currency) : "Free"}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -562,6 +780,98 @@ function PromoCode({
               {...p}
               mono
               placeholder="Enter code"
+              autoCapitalize="characters"
+              spellCheck={false}
+              value={value}
+              error={!!error}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onApply();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="default"
+              onClick={onApply}
+              loading={applying}
+              disabled={!value.trim() || applying}
+            >
+              Apply
+            </Button>
+          </div>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+/**
+ * Gift-card input (Phase 4) — same collapse-to-chip pattern as `PromoCode`. The applied
+ * chip shows the amount the card covers; the real draw-down happens in `placeOrder`.
+ */
+function GiftCardCode({
+  value,
+  onChange,
+  applied,
+  applying,
+  error,
+  currency,
+  amount,
+  onApply,
+  onRemove,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  applied: { code: string; applies: number } | null;
+  applying: boolean;
+  error: string | null;
+  currency: string;
+  amount: number;
+  onApply: () => void;
+  onRemove: () => void;
+}) {
+  if (applied) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "8px 12px",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--info-bg)",
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "var(--text-base)" }}>
+            <Icon name="tag" size={15} style={{ color: "var(--accent-pressed)" }} aria-hidden />
+            <span className="mono" style={{ color: "var(--warm-900)", fontWeight: 500 }}>
+              {applied.code}
+            </span>
+            <span style={{ color: "var(--warm-600)" }}>−{money(amount, currency)}</span>
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+            Remove
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <Field label="Gift card" error={error ?? undefined}>
+        {(p) => (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Input
+              {...p}
+              mono
+              placeholder="GIFT-XXXX-XXXX-XXXX"
               autoCapitalize="characters"
               spellCheck={false}
               value={value}

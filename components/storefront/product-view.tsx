@@ -5,11 +5,13 @@ import Link from "next/link";
 import { Icon } from "@/components/ui/icon";
 import { Stepper } from "@/components/ui/stepper";
 import { Media } from "@/components/sections/media";
-import type { Product } from "@/types";
+import { ProductGrid } from "./product-grid";
+import type { Product, RatingSummary, Review } from "@/types";
 import { money } from "@/lib/format";
 import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 import { variantStock, productType } from "./shared";
+import { ProductReviews, StarRating } from "./product-reviews";
 
 /**
  * Product detail (DESIGN §5.4) — sticky gallery + thumb strip on the left; buy box on
@@ -18,7 +20,19 @@ import { variantStock, productType } from "./shared";
  * description. Variant selection updates price / SKU / stock; out-of-stock honors the
  * variant's policy (deny → disabled CTA).
  */
-export function ProductView({ product, currency = "$" }: { product: Product; currency?: string }) {
+export function ProductView({
+  product,
+  currency = "$",
+  reviews = [],
+  ratingSummary = { average: 0, count: 0 },
+  related = [],
+}: {
+  product: Product;
+  currency?: string;
+  reviews?: Review[];
+  ratingSummary?: RatingSummary;
+  related?: Product[];
+}) {
   const sf = useStorefront();
   const href = useStoreHref();
   const [vi, setVi] = useState(() =>
@@ -107,6 +121,17 @@ export function ProductView({ product, currency = "$" }: { product: Product; cur
           >
             {product.title}
           </h1>
+          {ratingSummary.count > 0 && (
+            <a
+              href="#reviews"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 10, color: "var(--warm-600)", textDecoration: "none" }}
+            >
+              <StarRating value={ratingSummary.average} size={14} />
+              <span className="mono" style={{ fontSize: "var(--text-sm)" }}>
+                {ratingSummary.average.toFixed(1)} ({ratingSummary.count})
+              </span>
+            </a>
+          )}
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 16 }}>
             <span className="mono" style={{ fontSize: "var(--text-xl)", fontWeight: 600, color: "var(--warm-900)" }}>
               {money(variant?.price ?? 0, currency)}
@@ -232,6 +257,29 @@ export function ProductView({ product, currency = "$" }: { product: Product; cur
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Related products (Phase 4) */}
+      {related.length > 0 && (
+        <section style={{ marginTop: 56 }}>
+          <h2
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: "var(--text-xl)",
+              color: "var(--warm-900)",
+              marginBottom: 18,
+            }}
+          >
+            You may also like
+          </h2>
+          <ProductGrid products={related} currency={currency} />
+        </section>
+      )}
+
+      {/* Reviews (Phase 4) */}
+      <div id="reviews">
+        <ProductReviews handle={product.handle} summary={ratingSummary} reviews={reviews} />
       </div>
     </div>
   );

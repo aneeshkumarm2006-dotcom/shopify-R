@@ -21,7 +21,8 @@ import {
   useToast,
 } from "@/components/ui";
 import { fulfillmentPill, paymentPill } from "@/components/admin/shared";
-import { fulfillOrder, setOrderStatus } from "@/app/(admin)/orders/actions";
+import { fulfillOrder, setOrderStatus, addOrderNoteAction } from "@/app/(admin)/orders/actions";
+import type { TimelineKind } from "@/types";
 import { fmtDate, fmtDateTime, money } from "@/lib/format";
 
 /**
@@ -52,7 +53,24 @@ interface TimelineEvent {
   time: string;
 }
 
-export function OrderDetail({ order, customerId }: { order: Order; customerId: string }) {
+/** Icon per persisted timeline-entry kind (Phase 6). */
+const TIMELINE_ICON: Record<TimelineKind, IconName> = {
+  created: "check",
+  payment: "tag",
+  fulfillment: "truck",
+  status: "refresh",
+  note: "list",
+};
+
+export function OrderDetail({
+  order,
+  customerId,
+  currency = "$",
+}: {
+  order: Order;
+  customerId: string;
+  currency?: string;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [, startTransition] = useTransition();
@@ -60,10 +78,18 @@ export function OrderDetail({ order, customerId }: { order: Order; customerId: s
   const [fulfillment, setFulfillment] = useState<FulfillmentStatus>(
     order.fulfillmentStatus,
   );
-  const [events, setEvents] = useState<TimelineEvent[]>(() => [
-    { icon: "lock", label: "Age verified (21+)", time: order.ageVerifiedAt },
-    { icon: "check", label: "Order placed", time: order.createdAt },
-  ]);
+  const [note, setNote] = useState("");
+  const [events, setEvents] = useState<TimelineEvent[]>(() => {
+    const fromTimeline = (order.timeline ?? []).map((t) => ({
+      icon: TIMELINE_ICON[t.kind],
+      label: t.message,
+      time: t.at,
+    }));
+    return [
+      { icon: "lock" as IconName, label: "Age verified (21+)", time: order.ageVerifiedAt },
+      ...fromTimeline,
+    ].sort((a, b) => (a.time < b.time ? 1 : -1)); // newest first
+  });
 
   const pp = paymentPill(payment);
   const fp = fulfillmentPill(fulfillment);
@@ -81,6 +107,17 @@ export function OrderDetail({ order, customerId }: { order: Order; customerId: s
 
   function logEvent(icon: IconName, label: string) {
     setEvents((e) => [{ icon, label, time: new Date().toISOString() }, ...e]);
+  }
+
+  function submitNote() {
+    const body = note.trim();
+    if (!body) return;
+    logEvent("list", body); // optimistic
+    setNote("");
+    startTransition(async () => {
+      const res = await addOrderNoteAction(order._id, body);
+      if (!res.ok) toast(res.error ?? "Couldn't add the note", { tone: "critical" });
+    });
   }
 
   /**
@@ -316,7 +353,7 @@ export function OrderDetail({ order, customerId }: { order: Order; customerId: s
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {money(l.price)} × {l.quantity}
+                  {money(l.price, currency)} × {l.quantity}
                 </span>
                 <span
                   className="mono"
@@ -328,23 +365,27 @@ export function OrderDetail({ order, customerId }: { order: Order; customerId: s
                     fontWeight: 500,
                   }}
                 >
-                  {money(l.price * l.quantity)}
+                  {money(l.price * l.quantity, currency)}
                 </span>
               </div>
               );
             })}
             <div style={{ padding: "var(--space-3) var(--space-5)" }}>
-              <TotalRow label="Subtotal" value={money(order.subtotal)} />
-              <TotalRow label="Total" value={money(order.total)} strong />
-              <div
-                style={{
-                  fontSize: "var(--text-xs)",
-                  color: "var(--text-muted)",
-                  marginTop: 6,
-                }}
-              >
-                No tax or shipping engine in MVP
-              </div>
+              <TotalRow label="Subtotal" value={money(order.subtotal, currency)} />
+              {(order.discountAmount ?? 0) > 0 && (
+                <TotalRow
+                  label={order.discountCode ? `Discount · ${order.discountCode}` : "Discount"}
+                  value={`−${money(order.discountAmount ?? 0, currency)}`}
+                />
+              )}
+              <TotalRow
+                label={order.shippingMethod ? `Shipping · ${order.shippingMethod}` : "Shipping"}
+                value={(order.shippingTotal ?? 0) > 0 ? money(order.shippingTotal ?? 0, currency) : "Free"}
+              />
+              {(order.taxTotal ?? 0) > 0 && (
+                <TotalRow label="Tax" value={money(order.taxTotal ?? 0, currency)} />
+              )}
+              <TotalRow label="Total" value={money(order.total, currency)} strong />
             </div>
           </Card>
 
@@ -405,6 +446,25 @@ export function OrderDetail({ order, customerId }: { order: Order; customerId: s
                   </span>
                 </div>
               ))}
+              {/* Note composer (Phase 6) */}
+              <div style={{ display: "flex", gap: 8, marginTop: "var(--space-2)" }}>
+                <input
+                  className="input"
+                  value={note}
+                  onChange={(ev) => setNote(ev.target.value)}
+                  placeholder="Add a note…"
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter") {
+                      ev.preventDefault();
+                      submitNote();
+                    }
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <Button variant="default" onClick={submitNote} disabled={!note.trim()}>
+                  Add
+                </Button>
+              </div>
             </div>
           </Card>
         </div>

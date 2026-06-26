@@ -204,7 +204,12 @@ export function CollectionListSection({ section, preview }: SectionProps) {
     collections?: { name: string; handle?: string; count?: number }[];
   };
   const cols = s.columns ?? 4;
-  const list = s.collections ?? [];
+  const all = s.collections ?? [];
+  // Real-feel: on the live storefront, hide empty (0-product) categories so the page
+  // never shows a wall of "0 products" tiles. In the builder (preview) keep them all
+  // visible so the merchant can still see/edit every configured collection.
+  const list = preview ? all : all.filter((c) => c.count === undefined || c.count > 0);
+  if (!preview && list.length === 0) return null;
 
   return (
     <section style={{ padding: "var(--space-16) 0" }}>

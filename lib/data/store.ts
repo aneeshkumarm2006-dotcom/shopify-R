@@ -159,11 +159,68 @@ export async function publishStore(storeId: string): Promise<Store> {
   await dbConnect();
   const updated = await StoreModel.findByIdAndUpdate(
     storeId,
-    { $set: { status: "live", publishedAt: new Date(publishedAt) } },
+    // Publishing now clears any pending scheduled publish (it's superseded).
+    { $set: { status: "live", publishedAt: new Date(publishedAt), scheduledPublishAt: null } },
     { new: true },
   ).lean();
   if (!updated) throw new PublishError("Store not found.");
   return serialize<Store>(updated);
+}
+
+/**
+ * Schedule (or cancel) an automatic publish (Phase 6). Pass an ISO time in the future
+ * to schedule; pass null to cancel. Requires a claimed subdomain, same as publishing.
+ * The cron sweep (`runScheduledPublishes`) does the actual publish when the time passes.
+ */
+export async function scheduleStorePublish(
+  storeId: string,
+  at: string | null,
+): Promise<Store> {
+  const store = await getStore(storeId);
+  if (!store) throw new PublishError("Store not found.");
+  if (at) {
+    if (!store.subdomain) throw new PublishError("Claim a subdomain before scheduling.");
+    if (store.status === "suspended") throw new PublishError("This store is suspended.");
+    if (new Date(at).getTime() <= Date.now()) throw new PublishError("Pick a time in the future.");
+  }
+  if (!isDbConfigured()) return resolve({ ...store, scheduledPublishAt: at });
+  await dbConnect();
+  const updated = await StoreModel.findByIdAndUpdate(
+    storeId,
+    { $set: { scheduledPublishAt: at ? new Date(at) : null } },
+    { new: true },
+  ).lean();
+  if (!updated) throw new PublishError("Store not found.");
+  return serialize<Store>(updated);
+}
+
+/**
+ * Cron sweep (Phase 6): publish every draft store whose `scheduledPublishAt` has passed.
+ * Cross-tenant by design (one pass serves all stores); each publish goes through
+ * `publishStore` (which re-checks the pre-flight + clears the schedule). Returns the
+ * count published. Best-effort per store — one failure never aborts the batch.
+ */
+export async function runScheduledPublishes(): Promise<{ published: number; scanned: number }> {
+  if (!isDbConfigured()) return { published: 0, scanned: 0 };
+  await dbConnect();
+  const due = await StoreModel.find({
+    status: "draft",
+    scheduledPublishAt: { $ne: null, $lte: new Date() },
+  })
+    .select("_id")
+    .lean<{ _id: string }[]>();
+
+  let published = 0;
+  for (const { _id } of due) {
+    try {
+      await publishStore(_id);
+      published++;
+    } catch {
+      // Skip stores that fail pre-flight (e.g. subdomain unclaimed); clear the stale schedule.
+      await StoreModel.findByIdAndUpdate(_id, { $set: { scheduledPublishAt: null } }).catch(() => {});
+    }
+  }
+  return { published, scanned: due.length };
 }
 
 /**

@@ -14,7 +14,7 @@
     "seed": "tsx scripts/seed.ts",
     "migrate:multistore": "tsx scripts/migrate-multistore.ts",
     "db:check": "tsx scripts/check-counter.ts",
-    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/tenant-isolation-adversarial.test.ts tests/subdomain.test.ts tests/subdomain-sanitize-depth.test.ts tests/sanitize.test.ts tests/store-templates.test.ts tests/store-cap.test.ts tests/account-multistore.test.ts tests/discount.test.ts tests/discount-edge.test.ts tests/settlement.test.ts tests/checkout.test.ts tests/fulfillment.test.ts tests/catalog-search.test.ts tests/health-engine.test.ts"
+    "test": "node --import tsx --test tests/tenant-isolation.test.ts tests/tenant-isolation-adversarial.test.ts tests/subdomain.test.ts tests/subdomain-sanitize-depth.test.ts tests/sanitize.test.ts tests/store-templates.test.ts tests/store-cap.test.ts tests/account-multistore.test.ts tests/discount.test.ts tests/discount-edge.test.ts tests/settlement.test.ts tests/checkout.test.ts tests/checkout-stock.test.ts tests/tax.test.ts tests/shipping.test.ts tests/customer-token.test.ts tests/cart-merge.test.ts tests/collection-rules.test.ts tests/csv.test.ts tests/gift-card.test.ts tests/merchandising.test.ts tests/segments.test.ts tests/marketing-email.test.ts tests/permissions.test.ts tests/analytics-insights.test.ts tests/fulfillment.test.ts tests/catalog-search.test.ts tests/health-engine.test.ts"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
@@ -32,6 +32,7 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "15.1.12",
     "eslint-config-prettier": "^9.1.0",
+    "playwright": "^1.61.1",
     "postcss": "^8.5.1",
     "prettier": "^3.4.2",
     "prettier-plugin-tailwindcss": "^0.6.9",

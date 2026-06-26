@@ -7,11 +7,17 @@
 export interface PlacedOrder {
   orderNumber: number;
   email: string;
+  /** Goods total before discount/shipping/tax (display echo). */
+  subtotal?: number;
   total: number;
   currency: string;
   items: { title: string; variant?: string; quantity: number; price: number }[];
   /** Applied promo code + the amount it shaved off (display echo only). */
   discount?: { code: string; amount: number };
+  /** Chosen shipping method + amount (0 when free). */
+  shipping?: { method: string; amount: number };
+  /** Tax line label + amount (omitted when no tax was charged). */
+  tax?: { label: string; amount: number };
   /** How the customer chose to settle, for the confirmation echo. */
   settlementMethod?: "online" | "cod" | "in_store";
 }

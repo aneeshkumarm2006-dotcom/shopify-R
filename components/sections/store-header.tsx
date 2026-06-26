@@ -21,6 +21,9 @@ interface HeaderSettings {
   nav?: NavItem[];
 }
 
+/** Default announcement when the merchant hasn't set a promo (real-store texture). */
+const DEFAULT_PROMO = "Free shipping over $75  ·  Easy 30-day returns  ·  Secure checkout";
+
 /**
  * Storefront header (DESIGN §5.2) — optional promo bar, then a sticky, blurred bar
  * with the brand wordmark, nav, optional search affordance, and a cart icon carrying
@@ -47,7 +50,13 @@ export function StoreHeader({
     return () => window.removeEventListener("scroll", onScroll);
   }, [preview]);
 
-  const nav = s.nav ?? [];
+  // Real-feel nav: prefer hand-configured nav; otherwise fall back to the store's
+  // collections (threaded via context) so the header always has a browse menu.
+  const configuredNav = s.nav ?? [];
+  const nav = configuredNav.length ? configuredNav : preview ? [] : (sf?.navLinks ?? []);
+  // A default announcement bar gives the storefront real-store texture even when the
+  // merchant hasn't set a promo. Configured promo always wins.
+  const promo = s.promo || DEFAULT_PROMO;
 
   return (
     <header
@@ -61,7 +70,7 @@ export function StoreHeader({
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {s.promo && (
+      {promo && (
         <div
           style={{
             background: "var(--warm-900)",
@@ -72,7 +81,7 @@ export function StoreHeader({
             letterSpacing: "0.01em",
           }}
         >
-          {s.promo}
+          {promo}
         </div>
       )}
       <div
@@ -117,6 +126,16 @@ export function StoreHeader({
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
           {s.showSearch !== false && <HeaderSearch preview={preview} />}
+          {!preview && (
+            <Link
+              href={href("/account")}
+              className="iconbtn sz-36"
+              aria-label={sf?.customer ? `Account · ${sf.customer.name}` : "Sign in"}
+              style={{ color: "var(--warm-800)" }}
+            >
+              <Icon name="user" size={19} aria-hidden />
+            </Link>
+          )}
           {s.showCart !== false && (
             <button
               type="button"

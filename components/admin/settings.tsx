@@ -20,8 +20,27 @@ import {
   useToast,
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
-import { storeDomain } from "@/lib/format";
+import { storeDomain, CURRENCIES } from "@/lib/format";
 import { getPlan, listPlans } from "@/lib/payments/billing";
+
+/** Editable shipping-rate row (numbers/regions held as strings while typing). */
+interface RateDraft {
+  id: string;
+  label: string;
+  price: string;
+  freeOver: string;
+  regions: string;
+}
+
+function ratesToDrafts(rates: { id: string; label: string; price: number; freeOver?: number | null; regions?: string[] }[] = []): RateDraft[] {
+  return rates.map((r) => ({
+    id: r.id,
+    label: r.label,
+    price: String(r.price),
+    freeOver: r.freeOver != null ? String(r.freeOver) : "",
+    regions: (r.regions ?? []).join(", "),
+  }));
+}
 
 /**
  * Settings (DESIGN §4.10) — store info · brand/logo · domain · SEO defaults · code
@@ -67,8 +86,23 @@ export function Settings({
   const [name, setName] = useState(store.name);
   const [contactEmail, setContactEmail] = useState(store.settings.contactEmail);
   const [currency, setCurrency] = useState(store.settings.currency);
+  // Multi-currency (Phase 2): an ISO code drives formatting; "" = legacy custom symbol.
+  const [currencyCode, setCurrencyCode] = useState(store.settings.currencyCode ?? "");
   const [logo, setLogo] = useState<string[]>(
     store.settings.logoUrl ? [store.settings.logoUrl] : [],
+  );
+
+  // Tax engine (Phase 2). Disabled by default → zero tax at checkout.
+  const tax = store.settings.tax;
+  const [taxEnabled, setTaxEnabled] = useState(tax?.enabled ?? false);
+  const [taxLabelV, setTaxLabelV] = useState(tax?.label ?? "Sales tax");
+  const [taxRate, setTaxRate] = useState(String(tax?.rate ?? 0));
+  const [taxOnShipping, setTaxOnShipping] = useState(tax?.appliesToShipping ?? false);
+
+  // Shipping engine (Phase 2). Disabled/empty → free "Standard" at checkout.
+  const [shipEnabled, setShipEnabled] = useState(store.settings.shipping?.enabled ?? false);
+  const [rateDrafts, setRateDrafts] = useState<RateDraft[]>(
+    ratesToDrafts(store.settings.shipping?.rates),
   );
 
   // SEO defaults
@@ -115,8 +149,32 @@ export function Settings({
         settings: {
           contactEmail,
           currency,
+          currencyCode: currencyCode || undefined,
           logoUrl: logo[0] ?? "",
           settlement: { online: payOnline, cod: payCod, inStore: payInStore },
+          tax: {
+            enabled: taxEnabled,
+            rate: Number(taxRate) || 0,
+            label: taxLabelV.trim() || "Tax",
+            appliesToShipping: taxOnShipping,
+          },
+          shipping: {
+            enabled: shipEnabled,
+            rates: rateDrafts.map((r) => {
+              const regions = r.regions
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              const freeOver = r.freeOver.trim() === "" ? null : Number(r.freeOver);
+              return {
+                id: r.id,
+                label: r.label.trim() || "Shipping",
+                price: Number(r.price) || 0,
+                freeOver: freeOver != null && Number.isFinite(freeOver) ? freeOver : null,
+                regions,
+              };
+            }),
+          },
         },
         seoDefaults: { title: seoTitle, description: seoDesc },
         codeInjection: code,
@@ -170,7 +228,7 @@ export function Settings({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 120px",
+                gridTemplateColumns: "1fr 200px",
                 gap: "var(--space-4)",
               }}
             >
@@ -187,11 +245,37 @@ export function Settings({
                   />
                 )}
               </Field>
-              <Field label="Currency" help="Display only — no FX.">
+              <Field label="Currency" help="One per store — no FX.">
+                {(p) => (
+                  <select
+                    {...p}
+                    className="select"
+                    value={currencyCode}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      setCurrencyCode(code);
+                      const match = CURRENCIES.find((c) => c.code === code);
+                      if (match) setCurrency(match.symbol);
+                      mark();
+                    }}
+                  >
+                    <option value="">Custom symbol…</option>
+                    {CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} — {c.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+            </div>
+            {currencyCode === "" && (
+              <Field label="Currency symbol" help="Shown before amounts, e.g. “$”.">
                 {(p) => (
                   <Input
                     {...p}
                     value={currency}
+                    style={{ maxWidth: 120 }}
                     onChange={(e) => {
                       setCurrency(e.target.value);
                       mark();
@@ -199,7 +283,7 @@ export function Settings({
                   />
                 )}
               </Field>
-            </div>
+            )}
           </div>
         </Card>
 
@@ -262,6 +346,218 @@ export function Settings({
                 mark();
               }}
             />
+          </div>
+        </Card>
+
+        {/* Tax (Phase 2) */}
+        <Card
+          title={
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Tax
+              <Pill tone={taxEnabled ? "success" : "muted"}>{taxEnabled ? "On" : "Off"}</Pill>
+            </span>
+          }
+          action={
+            <Switch
+              checked={taxEnabled}
+              onChange={(next) => {
+                setTaxEnabled(next);
+                mark();
+              }}
+              aria-label="Enable tax"
+            />
+          }
+        >
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-4)",
+            }}
+          >
+            Applied to the post-discount subtotal at checkout. Off → no tax is charged.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 140px",
+              gap: "var(--space-4)",
+              alignItems: "start",
+            }}
+          >
+            <Field label="Tax label" help="Shown on the checkout summary, e.g. “VAT”.">
+              {(p) => (
+                <Input
+                  {...p}
+                  value={taxLabelV}
+                  disabled={!taxEnabled}
+                  onChange={(e) => {
+                    setTaxLabelV(e.target.value);
+                    mark();
+                  }}
+                />
+              )}
+            </Field>
+            <Field label="Rate (%)">
+              {(p) => (
+                <Input
+                  {...p}
+                  type="number"
+                  mono
+                  min={0}
+                  step="0.01"
+                  value={taxRate}
+                  disabled={!taxEnabled}
+                  onChange={(e) => {
+                    setTaxRate(e.target.value);
+                    mark();
+                  }}
+                />
+              )}
+            </Field>
+          </div>
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <SettlementRow
+              title="Tax shipping too"
+              body="Include the shipping charge in the taxable amount."
+              checked={taxOnShipping}
+              onChange={(next) => {
+                setTaxOnShipping(next);
+                mark();
+              }}
+            />
+          </div>
+        </Card>
+
+        {/* Shipping (Phase 2) */}
+        <Card
+          title={
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Shipping
+              <Pill tone={shipEnabled ? "success" : "muted"}>{shipEnabled ? "On" : "Off"}</Pill>
+            </span>
+          }
+          action={
+            <Switch
+              checked={shipEnabled}
+              onChange={(next) => {
+                setShipEnabled(next);
+                mark();
+              }}
+              aria-label="Enable shipping rates"
+            />
+          }
+        >
+          <p
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--text-muted)",
+              marginBottom: "var(--space-4)",
+            }}
+          >
+            Rates shoppers choose at checkout. Off or empty → a single free “Standard” rate.
+            Leave “Free over” blank for a flat rate; list regions (comma-separated, e.g. “OR,
+            WA”) to limit a rate, or leave blank for everywhere.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            {rateDrafts.map((r, i) => (
+              <div
+                key={r.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.4fr 90px 110px 1fr 32px",
+                  gap: "var(--space-2)",
+                  alignItems: "center",
+                }}
+              >
+                <Input
+                  aria-label="Rate label"
+                  placeholder="Standard"
+                  value={r.label}
+                  disabled={!shipEnabled}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setRateDrafts((d) => d.map((x, j) => (j === i ? { ...x, label: v } : x)));
+                    mark();
+                  }}
+                />
+                <Input
+                  aria-label="Price"
+                  type="number"
+                  mono
+                  min={0}
+                  step="0.01"
+                  placeholder="Price"
+                  value={r.price}
+                  disabled={!shipEnabled}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setRateDrafts((d) => d.map((x, j) => (j === i ? { ...x, price: v } : x)));
+                    mark();
+                  }}
+                />
+                <Input
+                  aria-label="Free over"
+                  type="number"
+                  mono
+                  min={0}
+                  step="0.01"
+                  placeholder="Free over"
+                  value={r.freeOver}
+                  disabled={!shipEnabled}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setRateDrafts((d) => d.map((x, j) => (j === i ? { ...x, freeOver: v } : x)));
+                    mark();
+                  }}
+                />
+                <Input
+                  aria-label="Regions"
+                  placeholder="Regions (all)"
+                  value={r.regions}
+                  disabled={!shipEnabled}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setRateDrafts((d) => d.map((x, j) => (j === i ? { ...x, regions: v } : x)));
+                    mark();
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="trash"
+                  aria-label="Remove rate"
+                  disabled={!shipEnabled}
+                  onClick={() => {
+                    setRateDrafts((d) => d.filter((_, j) => j !== i));
+                    mark();
+                  }}
+                />
+              </div>
+            ))}
+            <div>
+              <Button
+                variant="default"
+                size="sm"
+                icon="plus"
+                disabled={!shipEnabled}
+                onClick={() => {
+                  setRateDrafts((d) => [
+                    ...d,
+                    {
+                      id: `rate_${Math.random().toString(36).slice(2, 8)}`,
+                      label: "",
+                      price: "0",
+                      freeOver: "",
+                      regions: "",
+                    },
+                  ]);
+                  mark();
+                }}
+              >
+                Add rate
+              </Button>
+            </div>
           </div>
         </Card>
 

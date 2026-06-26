@@ -5,8 +5,13 @@ import type { ReactNode } from "react";
 import type { Store } from "@/types";
 import { CartSheet } from "@/components/ui/cart-sheet";
 import { Icon } from "@/components/ui/icon";
-import { storePath } from "@/lib/format";
-import { StorefrontProvider, useStorefront, useStoreHref } from "./storefront-context";
+import { storePath, storeCurrency } from "@/lib/format";
+import {
+  StorefrontProvider,
+  useStorefront,
+  useStoreHref,
+  type StorefrontCustomer,
+} from "./storefront-context";
 import { AgeGate } from "./age-gate";
 import { STORE_HOME } from "./shared";
 
@@ -18,14 +23,26 @@ import { STORE_HOME } from "./shared";
  * (home/static) or the section components directly (product/collection/checkout/…),
  * so the chrome stays consistent without living here.
  */
-export function StoreShell({ store, children }: { store: Store; children: ReactNode }) {
+export function StoreShell({
+  store,
+  customer = null,
+  navLinks = [],
+  children,
+}: {
+  store: Store;
+  customer?: StorefrontCustomer | null;
+  navLinks?: { label: string; href: string }[];
+  children: ReactNode;
+}) {
   return (
     <StorefrontProvider
       storeId={store._id}
       storeName={store.name}
-      currency={store.settings.currency}
+      currency={storeCurrency(store.settings)}
       ageGateEnabled={store.ageGate.enabled}
       basePath={storePath(store.subdomain)}
+      customer={customer}
+      navLinks={navLinks}
     >
       <div style={{ minHeight: "100vh", background: "var(--warm-50)", color: "var(--text)" }}>
         {children}

@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getProductByHandle, getThemeConfig } from "@/lib/data";
+import {
+  getProductByHandle,
+  getThemeConfig,
+  getProductReviews,
+  getRatingSummary,
+  getRelatedProducts,
+} from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { buildStoreMetadata } from "@/lib/seo";
 import { ProductView, StoreFrame } from "@/components/storefront";
@@ -47,9 +53,22 @@ export default async function StoreProductPage({
   // Draft products stay hidden from customers (Stage 8 store-wide gating).
   if (!config || !product || product.status !== "active") notFound();
 
+  // Reviews + related rail (Phase 4) — fetched in parallel after the product resolves.
+  const [reviews, ratingSummary, related] = await Promise.all([
+    getProductReviews(storeId, product._id),
+    getRatingSummary(storeId, product._id),
+    getRelatedProducts(storeId, product, 4),
+  ]);
+
   return (
     <StoreFrame config={config} storeName={store.name}>
-      <ProductView product={product} currency={store.settings.currency} />
+      <ProductView
+        product={product}
+        currency={store.settings.currency}
+        reviews={reviews}
+        ratingSummary={ratingSummary}
+        related={related}
+      />
     </StoreFrame>
   );
 }

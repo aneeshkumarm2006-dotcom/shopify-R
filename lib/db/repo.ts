@@ -106,4 +106,22 @@ export class StoreScopedRepository<T> {
     const res = await this.#model.deleteOne(scopedFilter(storeId, filter));
     return res.deletedCount > 0;
   }
+
+  /** Update every matching document (still tenant-scoped). Returns the modified count. */
+  async updateMany(
+    storeId: string,
+    filter: ScopedFilter,
+    update: Record<string, unknown>,
+  ): Promise<number> {
+    await dbConnect();
+    const res = await this.#model.updateMany(scopedFilter(storeId, filter), update);
+    return res.modifiedCount ?? 0;
+  }
+
+  /** Delete every matching document (still tenant-scoped). Returns the deleted count. */
+  async deleteMany(storeId: string, filter: ScopedFilter): Promise<number> {
+    await dbConnect();
+    const res = await this.#model.deleteMany(scopedFilter(storeId, filter));
+    return res.deletedCount ?? 0;
+  }
 }

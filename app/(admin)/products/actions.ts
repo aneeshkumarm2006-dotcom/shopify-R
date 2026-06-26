@@ -11,7 +11,13 @@ import {
   duplicateProduct,
   setProductCollections,
   recordEvent,
+  getProducts,
+  productsToCsv,
+  parseProductCsv,
+  importProducts,
+  bulkEditProducts,
   type ProductInput,
+  type BulkProductEdit,
 } from "@/lib/data";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
@@ -126,6 +132,57 @@ export async function bulkSetStatusAction(
   });
   revalidateProducts();
   return { ok: true, count };
+}
+
+export async function bulkEditAction(
+  ids: string[],
+  edit: BulkProductEdit,
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, count: 0, error: "Read-only: exit impersonation to make changes." }; }
+  const count = await bulkEditProducts(storeId, ids, edit);
+  await recordEvent({
+    type: "product.bulk_edited",
+    storeId,
+    actorUserId: await getActorUserId(),
+    metadata: { count, fields: Object.keys(edit) },
+  });
+  revalidateProducts();
+  return { ok: true, count };
+}
+
+/** Export all of the store's products as a CSV string (the client triggers download). */
+export async function exportProductsCsv(): Promise<{ ok: boolean; csv?: string; error?: string }> {
+  const storeId = await requireMerchantStoreId();
+  const products = await getProducts(storeId);
+  return { ok: true, csv: productsToCsv(products) };
+}
+
+/** Import products from CSV text: parse, upsert by handle, return a summary. */
+export async function importProductsAction(
+  csv: string,
+): Promise<{ ok: boolean; created: number; updated: number; errors: string[] }> {
+  const storeId = await requireMerchantStoreId();
+  try { await assertNotImpersonating(); } catch { return { ok: false, created: 0, updated: 0, errors: ["Read-only: exit impersonation to make changes."] }; }
+
+  const parsed = parseProductCsv(csv);
+  if (parsed.rows.length === 0) {
+    return { ok: false, created: 0, updated: 0, errors: parsed.errors.length ? parsed.errors : ["No rows to import."] };
+  }
+  const summary = await importProducts(storeId, parsed.rows);
+  await recordEvent({
+    type: "product.imported",
+    storeId,
+    actorUserId: await getActorUserId(),
+    metadata: { created: summary.created, updated: summary.updated },
+  });
+  revalidateProducts();
+  return {
+    ok: summary.errors.length === 0,
+    created: summary.created,
+    updated: summary.updated,
+    errors: [...parsed.errors, ...summary.errors],
+  };
 }
 
 export async function bulkDeleteAction(ids: string[]): Promise<{ ok: boolean; count: number }> {

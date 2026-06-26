@@ -22,7 +22,11 @@ export default async function StoreCheckoutPage() {
 
   return (
     <StoreFrame config={config} storeName={store.name} footer={false}>
-      <CheckoutView settlements={enabledSettlements(store)} />
+      <CheckoutView
+        settlements={enabledSettlements(store)}
+        shippingSettings={store.settings.shipping}
+        taxSettings={store.settings.tax}
+      />
     </StoreFrame>
   );
 }

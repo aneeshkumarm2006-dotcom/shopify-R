@@ -59,6 +59,34 @@ export async function saveCart(
   );
 }
 
+/* ============================================================
+   Customer cart persistence (Phase 3) — a logged-in shopper's cart is keyed by a
+   stable derived id so it follows them across devices, distinct from the anonymous
+   per-browser session cart.
+   ============================================================ */
+
+/** Stable cart key for a logged-in customer (mirrors the anonymous `sessionId` slot). */
+export function customerCartKey(customerId: string): string {
+  return `cust:${customerId}`;
+}
+
+/**
+ * Union two carts by `(productId, variantId)`, summing quantities (Phase 3 cart merge
+ * on login). Pure + deterministic so it's unit-testable; the price snapshot from the
+ * first occurrence wins (checkout re-derives authoritative prices anyway). Items from
+ * `a` keep their order; new items from `b` append.
+ */
+export function mergeCartItems(a: CartItem[], b: CartItem[]): CartItem[] {
+  const byKey = new Map<string, CartItem>();
+  for (const item of [...a, ...b]) {
+    const key = `${item.productId}:${item.variantId}`;
+    const existing = byKey.get(key);
+    if (existing) existing.quantity += item.quantity;
+    else byKey.set(key, { ...item });
+  }
+  return [...byKey.values()];
+}
+
 /**
  * Mark the session's active cart as converted once its order is placed, so a new
  * empty cart starts fresh on the next visit (PRD §5.7 cart lifecycle). No-op when

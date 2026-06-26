@@ -9,8 +9,20 @@ import { MOCK_STORE_ID } from "@/lib/data/mocks";
 import { isDbConfigured } from "@/lib/db";
 import { provisionMerchant, authenticateCredentials } from "./provision";
 import { readImpersonation, ImpersonationReadOnlyError } from "./impersonation";
+import { getStoreRole } from "@/lib/data/staff";
+import { roleHasPermission } from "./permissions";
+import type { Permission, StoreRole } from "@/types";
 
 export { ImpersonationReadOnlyError } from "./impersonation";
+export * from "./permissions";
+
+/** Thrown when the signed-in user's role lacks the permission a server action needs. */
+export class PermissionError extends Error {
+  constructor(public permission: Permission) {
+    super("You don't have permission to do that.");
+    this.name = "PermissionError";
+  }
+}
 
 /**
  * Real auth (TODO Stage 7, PRD §6.1 / §7.1) — NextAuth (Auth.js v5) with a single
@@ -214,6 +226,40 @@ export async function getMerchantContext(): Promise<MerchantContext | null> {
 export async function assertNotImpersonating(): Promise<void> {
   const ctx = await getMerchantContext();
   if (ctx?.impersonating) throw new ImpersonationReadOnlyError();
+}
+
+/**
+ * The signed-in user's role on their ACTIVE store (Phase 6 RBAC). `owner` in stub mode
+ * (single demo merchant) and while impersonating (operators get a full read-only view).
+ * Null when there's no usable session.
+ */
+export async function getCurrentStoreRole(): Promise<StoreRole | null> {
+  if (!isAuthConfigured()) return "owner";
+  const ctx = await getMerchantContext();
+  if (!ctx) return null;
+  if (ctx.impersonating) return "owner";
+  let session: Session | null;
+  try {
+    session = await auth();
+  } catch {
+    return null;
+  }
+  const userId = session?.user?.id;
+  if (!userId) return null;
+  return getStoreRole(ctx.storeId, userId, session?.user?.email ?? null);
+}
+
+/**
+ * Permission guard for server actions (Phase 6 RBAC). Resolves the active store + the
+ * user's role and throws `PermissionError` when the role doesn't grant `permission`.
+ * Returns the `storeId` on success (so callers use it like `requireMerchantStoreId`).
+ */
+export async function requirePermission(permission: Permission): Promise<string> {
+  const storeId = await requireMerchantStoreId();
+  if (!isAuthConfigured()) return storeId; // stub mode: full access
+  const role = await getCurrentStoreRole();
+  if (!roleHasPermission(role, permission)) throw new PermissionError(permission);
+  return storeId;
 }
 
 /**
