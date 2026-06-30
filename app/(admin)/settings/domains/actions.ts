@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { CustomDomain } from "@/types";
+import type { CustomDomain, DomainVerificationChallenge } from "@/types";
 import {
   createPendingDomain,
   getDomainById,
@@ -61,6 +61,33 @@ function normalizeDomainInput(raw: string): { ok: true; domain: string } | { ok:
 function isPlatformDomain(domain: string): boolean {
   const app = APP_DOMAIN.toLowerCase();
   return domain === app || domain.endsWith(`.${app}`);
+}
+
+/**
+ * The full set of DNS records a merchant must publish for a domain to go live:
+ *  - any ownership-verification challenges Vercel returned (TXT records — only present
+ *    when the domain is contested / moving from another Vercel account), PLUS
+ *  - the ROUTING record that actually points the domain at us. Vercel doesn't always
+ *    return this in its `verification` array (when no ownership challenge is needed it
+ *    comes back empty), so we always synthesize it ourselves from Vercel's standard
+ *    targets: an `A` record to the apex IP for a root domain, a `CNAME` for a subdomain.
+ *    Without this, a domain with no TXT challenge would show NO instructions at all.
+ */
+function buildDnsInstructions(
+  domain: string,
+  apex: boolean,
+  vercelChallenges: DomainVerificationChallenge[],
+): DomainVerificationChallenge[] {
+  const routing: DomainVerificationChallenge = apex
+    ? { type: "A", name: "@", value: "76.76.21.21" }
+    : {
+        type: "CNAME",
+        // host part (everything before the registrable domain), e.g. "shop" for
+        // shop.example.com — what the merchant enters as the record name.
+        name: domain.split(".").slice(0, -2).join(".") || domain,
+        value: "cname.vercel-dns.com",
+      };
+  return [...vercelChallenges, routing];
 }
 
 /** Friendly, non-leaky message for a failed Vercel call — never echoes raw Vercel
@@ -141,10 +168,25 @@ export async function addDomainAction(
     return { ok: false, error: message };
   }
 
-  // Reflect whatever Vercel told us immediately rather than leaving it pending.
+  // Don't trust Vercel's `verified` flag alone — it only means the domain was accepted
+  // onto the project (no ownership challenge), NOT that DNS is pointed and serving. The
+  // real "is it live" signal is the config check's `misconfigured`. A freshly added
+  // domain almost always has DNS not-yet-pointed → "pending" until a refresh/cron (or
+  // this check, if the merchant pre-pointed DNS) confirms it's correctly configured.
+  let misconfigured = true;
+  try {
+    misconfigured = (await getProjectDomainConfig(domain)).misconfigured;
+  } catch {
+    // Can't check → assume not-yet-configured (pending). Safer than claiming verified;
+    // the refresh button / cron sweep will promote it once DNS actually resolves.
+    misconfigured = true;
+  }
+  const live = vercelResult.verified && !misconfigured;
+
   const updated = await updateDomainVerification(created._id, {
-    verificationStatus: vercelResult.verified ? "verified" : "pending",
-    verificationDetails: vercelResult.verification,
+    verificationStatus: live ? "verified" : "pending",
+    verificationDetails: buildDnsInstructions(domain, isApexDomain(domain), vercelResult.verification),
+    sslStatus: live ? "issued" : "pending",
   });
 
   const actorUserId = await getActorUserId();
@@ -269,7 +311,7 @@ export async function refreshDomainStatusAction(
 
   const updated = await updateDomainVerification(existing._id, {
     verificationStatus,
-    verificationDetails: info.verification,
+    verificationDetails: buildDnsInstructions(existing.domain, existing.isApex, info.verification),
     sslStatus: nowVerified ? "issued" : "pending",
     errorMessage,
   });
