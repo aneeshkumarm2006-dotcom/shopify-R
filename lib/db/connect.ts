@@ -55,7 +55,11 @@ export async function dbConnect(): Promise<typeof mongoose> {
     cache.promise = mongoose.connect(MONGODB_URI, {
       dbName: MONGODB_DB,
       bufferCommands: false,
-      maxPoolSize: 10,
+      // The storefront data cache (lib/cache) now absorbs most read volume, so a
+      // warm lambda needs far fewer concurrent connections. Lower the ceiling and
+      // let idle lambdas drop to zero open sockets (minPoolSize: 0).
+      maxPoolSize: 5,
+      minPoolSize: 0,
     });
   }
 

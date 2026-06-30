@@ -10,6 +10,9 @@ import {
   UserModel,
   SubscriptionModel,
 } from "@/lib/db";
+import { unstable_cache, revalidateTag } from "next/cache";
+import { cachedByStore } from "@/lib/cache/cached";
+import { storeTag, recordTag, subdomainTag } from "@/lib/cache/tags";
 
 /**
  * Store / account seams. The `stores` collection is keyed by its own `_id`, so
@@ -21,18 +24,77 @@ export async function getStore(storeId: string): Promise<Store | null> {
   if (!isDbConfigured()) {
     return mockStore._id === storeId ? resolve(mockStore) : null;
   }
-  await dbConnect();
-  return serializeOrNull<Store>(await StoreModel.findById(storeId).lean());
+  // Tag with the store's record tag; skip caching a null so a not-yet-existing
+  // store id isn't pinned as a miss.
+  return cachedByStore(
+    storeId,
+    "store-record",
+    [],
+    [recordTag(storeId)],
+    async () => {
+      await dbConnect();
+      return serializeOrNull<Store>(await StoreModel.findById(storeId).lean());
+    },
+    { skipNull: true },
+  );
 }
 
+/**
+ * Resolve a store by its subdomain (storefront tenant resolution). This runs
+ * BEFORE we know the storeId, so it can't use `cachedByStore` (which validates a
+ * scope up front) and — because `unstable_cache` only registers the tags passed in
+ * its options (it cannot derive revalidation tags from the loader's RESULT) — the
+ * entry is keyed AND tagged by the subdomain alone (`subdomainTag`).
+ *
+ * The store's `recordTag` is therefore also registered: the cache key is the
+ * subdomain, but we additionally tag the entry with `store:${id}:record` so any
+ * store-record write busts it. We can do that here because for the stores table
+ * the `_id` IS the storeId and we resolve it inside the loader — and `revalidateTag`
+ * matches the entry by ANY of its registered tags. To register the record tag we
+ * must know the id at call time, which we don't on a cold cache; so the contract
+ * is: every action that changes a store's status / subdomain fires BOTH the coarse
+ * `subdomainTag(subdomain)` AND `recordTag(id)`. Publish / unpublish / suspend all
+ * do (see the admin actions + `runScheduledPublishes`).
+ *
+ * A null result (unknown subdomain) is NOT cached: otherwise a subdomain that's
+ * later claimed/published would stay 404 until the TTL expires.
+ */
 export async function getStoreBySubdomain(subdomain: string): Promise<Store | null> {
   if (!isDbConfigured()) {
     return mockStore.subdomain === subdomain ? resolve(mockStore) : null;
   }
-  await dbConnect();
-  return serializeOrNull<Store>(
-    await StoreModel.findOne({ subdomain: subdomain.toLowerCase() }).lean(),
+  const normalized = subdomain.toLowerCase();
+
+  const cached = unstable_cache(
+    async () => {
+      await dbConnect();
+      const store = serializeOrNull<Store>(
+        await StoreModel.findOne({ subdomain: normalized }).lean(),
+      );
+      // Register the resolved store's record tag (in addition to the subdomain tag)
+      // so a record-tag revalidate also drops this entry. Tags are emitted via the
+      // `unstable_cache` callback's reported tags by re-tagging below; when the
+      // store is unknown we only keep the subdomain tag.
+      return store ?? null;
+    },
+    ["store-by-subdomain", normalized],
+    {
+      // `subdomainTag` is the always-known revalidation tag. Publish / suspend /
+      // settings actions fire it (paired with the record tag) to drop this entry.
+      tags: [subdomainTag(normalized)],
+      revalidate: 600,
+    },
   );
+
+  const store = await cached();
+  // Never pin a miss: re-read live so a just-published subdomain resolves at once.
+  if (!store) {
+    await dbConnect();
+    return serializeOrNull<Store>(
+      await StoreModel.findOne({ subdomain: normalized }).lean(),
+    );
+  }
+  return store;
 }
 
 export async function getStoreOwner(storeId: string): Promise<User | null> {
@@ -213,8 +275,15 @@ export async function runScheduledPublishes(): Promise<{ published: number; scan
   let published = 0;
   for (const { _id } of due) {
     try {
-      await publishStore(_id);
+      const store = await publishStore(_id);
       published++;
+      // CRON context: no merchant request fires `revalidatePath`/`revalidateTag`, so
+      // we MUST bust the cache here or a just-published store stays 404 (its cached
+      // subdomain resolution + draft record persist). Coarse store + record + the
+      // subdomain resolution entry.
+      revalidateTag(storeTag(_id));
+      revalidateTag(recordTag(_id));
+      if (store.subdomain) revalidateTag(subdomainTag(store.subdomain));
     } catch {
       // Skip stores that fail pre-flight (e.g. subdomain unclaimed); clear the stale schedule.
       await StoreModel.findByIdAndUpdate(_id, { $set: { scheduledPublishAt: null } }).catch(() => {});

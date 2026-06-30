@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import type { ProductStatus } from "@/types";
+import { productsTag, productTag, collectionsTag } from "@/lib/cache/tags";
 import {
   createProduct,
   updateProduct,
@@ -11,6 +12,7 @@ import {
   duplicateProduct,
   setProductCollections,
   recordEvent,
+  getProduct,
   getProducts,
   productsToCsv,
   parseProductCsv,
@@ -35,11 +37,16 @@ export interface SaveResult {
   error?: string;
 }
 
-function revalidateProducts(id?: string) {
+function revalidateProducts(storeId: string, id?: string, handle?: string) {
   revalidatePath("/products");
   revalidatePath("/inventory");
   revalidatePath("/collections");
   if (id) revalidatePath(`/products/edit/${id}`);
+  // Bust the storefront data cache for this tenant: product lists + (smart)
+  // collection membership, and the specific PDP handle when known.
+  revalidateTag(productsTag(storeId));
+  revalidateTag(collectionsTag(storeId));
+  if (handle) revalidateTag(productTag(storeId, handle));
 }
 
 /**
@@ -76,7 +83,7 @@ export async function saveProduct(
       });
     }
     if (productId) await setProductCollections(storeId, productId, collectionIds);
-    revalidateProducts(productId ?? undefined);
+    revalidateProducts(storeId, productId ?? undefined, input.handle);
     return { ok: true, id: productId ?? undefined };
   } catch (err) {
     if (err instanceof Error && err.message === "HANDLE_TAKEN") {
@@ -89,6 +96,9 @@ export async function saveProduct(
 export async function removeProduct(id: string): Promise<{ ok: boolean }> {
   const storeId = await requireMerchantStoreId();
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
+  // Resolve the handle BEFORE deleting so we can bust its PDP cache entry —
+  // otherwise the by-handle cache would keep serving the deleted product.
+  const existing = await getProduct(storeId, id);
   const ok = await deleteProduct(storeId, id);
   if (ok) {
     await recordEvent({
@@ -98,7 +108,7 @@ export async function removeProduct(id: string): Promise<{ ok: boolean }> {
       target: { kind: "product", id },
     });
   }
-  revalidateProducts();
+  revalidateProducts(storeId, id, existing?.handle);
   return { ok };
 }
 
@@ -113,7 +123,7 @@ export async function duplicateProductAction(id: string): Promise<SaveResult> {
     actorUserId: await getActorUserId(),
     target: { kind: "product", id: copy._id, label: copy.title },
   });
-  revalidateProducts(copy._id);
+  revalidateProducts(storeId, copy._id, copy.handle);
   return { ok: true, id: copy._id };
 }
 
@@ -130,7 +140,7 @@ export async function bulkSetStatusAction(
     actorUserId: await getActorUserId(),
     metadata: { status, count },
   });
-  revalidateProducts();
+  revalidateProducts(storeId);
   return { ok: true, count };
 }
 
@@ -147,7 +157,7 @@ export async function bulkEditAction(
     actorUserId: await getActorUserId(),
     metadata: { count, fields: Object.keys(edit) },
   });
-  revalidateProducts();
+  revalidateProducts(storeId);
   return { ok: true, count };
 }
 
@@ -176,7 +186,7 @@ export async function importProductsAction(
     actorUserId: await getActorUserId(),
     metadata: { created: summary.created, updated: summary.updated },
   });
-  revalidateProducts();
+  revalidateProducts(storeId);
   return {
     ok: summary.errors.length === 0,
     created: summary.created,
@@ -195,6 +205,6 @@ export async function bulkDeleteAction(ids: string[]): Promise<{ ok: boolean; co
     actorUserId: await getActorUserId(),
     metadata: { count },
   });
-  revalidateProducts();
+  revalidateProducts(storeId);
   return { ok: true, count };
 }

@@ -1,5 +1,7 @@
 import type { RatingSummary, Review, ReviewStatus } from "@/types";
 import { isDbConfigured, Reviews } from "@/lib/db";
+import { cachedByStore } from "@/lib/cache/cached";
+import { reviewsTag } from "@/lib/cache/tags";
 
 /**
  * Product reviews / ratings (Phase 4). New reviews auto-publish (friendlier
@@ -34,10 +36,17 @@ export async function getProductReviews(
   productId: string,
 ): Promise<Review[]> {
   if (!isDbConfigured()) return [];
-  return Reviews.findMany(
+  return cachedByStore(
     storeId,
-    { productId, status: "published" },
-    { sort: { createdAt: -1 } },
+    "product-reviews",
+    [productId],
+    [reviewsTag(storeId)],
+    () =>
+      Reviews.findMany(
+        storeId,
+        { productId, status: "published" },
+        { sort: { createdAt: -1 } },
+      ),
   );
 }
 
@@ -47,7 +56,13 @@ export async function getRatingSummary(
   productId: string,
 ): Promise<RatingSummary> {
   if (!isDbConfigured()) return { average: 0, count: 0 };
-  const rows = await Reviews.findMany(storeId, { productId, status: "published" });
+  const rows = await cachedByStore(
+    storeId,
+    "product-rating-rows",
+    [productId],
+    [reviewsTag(storeId)],
+    () => Reviews.findMany(storeId, { productId, status: "published" }),
+  );
   return summarizeRatings(rows);
 }
 

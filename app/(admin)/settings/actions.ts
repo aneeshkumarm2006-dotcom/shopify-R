@@ -1,8 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import type { SubscriptionPlan } from "@/types";
+import { storeTag, recordTag } from "@/lib/cache/tags";
 import { updateStore, setSubscriptionPlan, recordEvent, type StoreUpdate } from "@/lib/data";
+import { subdomainTag } from "@/lib/cache/tags";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
@@ -37,6 +39,11 @@ export async function saveStoreSettings(
   }
   revalidatePath("/settings");
   revalidatePath("/dashboard");
+  // The storefront reads the store record via getStoreBySubdomain (tagged by
+  // subdomain) AND getStore (tagged by record) — bust both so settings/name/SEO
+  // changes show on the live store, not just the admin.
+  revalidateTag(recordTag(storeId));
+  if (saved.subdomain) revalidateTag(subdomainTag(saved.subdomain));
   return { ok: true };
 }
 
@@ -61,5 +68,9 @@ export async function setPlanAction(plan: SubscriptionPlan): Promise<{ ok: boole
   });
   revalidatePath("/settings");
   revalidatePath("/", "layout");
+  // Plan is a coarse store attribute (drives the store cap) — nuke the tenant's
+  // record + coarse cache so any plan-derived read refreshes.
+  revalidateTag(storeTag(storeId));
+  revalidateTag(recordTag(storeId));
   return { ok: true };
 }

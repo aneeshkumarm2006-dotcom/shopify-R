@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import {
   createCollection,
   updateCollection,
@@ -8,6 +8,7 @@ import {
   recordEvent,
   type CollectionInput,
 } from "@/lib/data";
+import { collectionsTag, productsTag } from "@/lib/cache/tags";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
@@ -22,11 +23,15 @@ export interface CollectionSaveResult {
   error?: string;
 }
 
-function revalidateCollections(handle?: string) {
+function revalidateCollections(storeId: string, handle?: string) {
   revalidatePath("/collections");
   revalidatePath("/products");
   // The storefront collection page reads by handle.
   if (handle) revalidatePath(`/collections/${handle}`);
+  // Bust the storefront data cache: collection lists/membership AND products
+  // (manual membership changes which products a collection shows).
+  revalidateTag(collectionsTag(storeId));
+  revalidateTag(productsTag(storeId));
 }
 
 export async function saveCollection(
@@ -47,7 +52,7 @@ export async function saveCollection(
         actorUserId: await getActorUserId(),
         target: { kind: "collection", id, label: input.title },
       });
-      revalidateCollections(input.handle);
+      revalidateCollections(storeId, input.handle);
       return { ok: true, id };
     }
     const created = await createCollection(storeId, input);
@@ -57,7 +62,7 @@ export async function saveCollection(
       actorUserId: await getActorUserId(),
       target: { kind: "collection", id: created._id, label: input.title },
     });
-    revalidateCollections(input.handle);
+    revalidateCollections(storeId, input.handle);
     return { ok: true, id: created._id };
   } catch (err) {
     if (err instanceof Error && err.message === "HANDLE_TAKEN") {
@@ -79,6 +84,6 @@ export async function removeCollection(id: string): Promise<{ ok: boolean }> {
       target: { kind: "collection", id },
     });
   }
-  revalidateCollections();
+  revalidateCollections(storeId);
   return { ok };
 }

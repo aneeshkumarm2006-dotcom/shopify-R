@@ -236,8 +236,20 @@ export async function setStoreStatusBySubdomain(
     { subdomain: subdomain.toLowerCase() },
     { $set: { status } },
     { new: true },
-  ).lean();
-  return updated ? status : null;
+  ).lean<{ _id: string } | null>();
+  if (!updated) return null;
+
+  // CRITICAL: suspend/reinstate changes live-serving status without a merchant
+  // request. The cache-busting MUST happen here (the action only has the subdomain;
+  // we have the resolved store _id too) or a suspended store keeps serving from the
+  // cached subdomain resolution + record. Coarse store + record + subdomain entry.
+  const id = String(updated._id);
+  const { revalidateTag } = await import("next/cache");
+  const { storeTag, recordTag, subdomainTag } = await import("@/lib/cache/tags");
+  revalidateTag(storeTag(id));
+  revalidateTag(recordTag(id));
+  revalidateTag(subdomainTag(subdomain));
+  return status;
 }
 
 // Re-export the client-safe subdomain helpers so existing `@/lib/data` imports

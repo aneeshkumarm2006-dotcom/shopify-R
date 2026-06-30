@@ -10,6 +10,8 @@ import {
   ThemeConfigModel,
   ThemeVersionModel,
 } from "@/lib/db";
+import { cachedByStore } from "@/lib/cache/cached";
+import { themeTag } from "@/lib/cache/tags";
 
 const DEFAULT_HEADER: Section = {
   id: "header",
@@ -44,6 +46,35 @@ export async function getThemeConfig(storeId: string): Promise<ThemeConfig | nul
   if (!isDbConfigured()) {
     return HOME_CONFIG.storeId === storeId ? resolve(HOME_CONFIG) : null;
   }
+
+  // ⚠️ CORRECTNESS TRAP: this read has a WRITE side effect (upsert + back-fill
+  // patch for legacy stores). We must NEVER memoize the write — a cached call
+  // would silently skip the upsert. So the idempotent upsert/patch runs OUTSIDE
+  // the cache every call (it's a one-time no-op once the doc is seeded), and only
+  // the FINAL pure read is memoized + tagged.
+  await ensureThemeConfig(storeId);
+
+  return cachedByStore(
+    storeId,
+    "theme-config",
+    [],
+    [themeTag(storeId)],
+    async () => {
+      await dbConnect();
+      return serializeOrNull<ThemeConfig>(
+        await ThemeConfigModel.findOne(scopedFilter(storeId)).lean(),
+      );
+    },
+    { skipNull: true },
+  );
+}
+
+/**
+ * Idempotently ensure a store has a non-null themeConfig (header/footer/templates).
+ * This is the WRITE side that used to live inside `getThemeConfig`; it is kept OUT
+ * of the cache so it always runs (a no-op once seeded) and never gets memoized.
+ */
+async function ensureThemeConfig(storeId: string): Promise<void> {
   await dbConnect();
   // Upsert a blank config for stores provisioned before the ThemeConfig seed was added.
   // $setOnInsert seeds header/footer/templates so new stores never have null sections,
@@ -70,16 +101,12 @@ export async function getThemeConfig(storeId: string): Promise<ThemeConfig | nul
     if (!raw.templates || Object.keys(raw.templates as object).length === 0) {
       patch.templates = DEFAULT_TEMPLATES;
     }
-    return serializeOrNull<ThemeConfig>(
-      await ThemeConfigModel.findOneAndUpdate(
-        scopedFilter(storeId),
-        { $set: patch },
-        { new: true },
-      ).lean(),
-    );
+    await ThemeConfigModel.findOneAndUpdate(
+      scopedFilter(storeId),
+      { $set: patch },
+      { new: true },
+    ).lean();
   }
-
-  return serializeOrNull<ThemeConfig>(doc);
 }
 
 /** The mutable shape the builder writes back — `storeId`/timestamps are owned server-side. */

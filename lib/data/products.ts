@@ -3,6 +3,8 @@ import type { ParsedProductRow } from "./csv";
 import { mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Products } from "@/lib/db";
+import { cachedByStore } from "@/lib/cache/cached";
+import { productsTag, productTag } from "@/lib/cache/tags";
 
 export type { ProductInput } from "@/types";
 
@@ -16,7 +18,14 @@ export async function getProducts(
     if (opts?.status) rows = rows.filter((p) => p.status === opts.status);
     return resolve(rows);
   }
-  return Products.findMany(storeId, opts?.status ? { status: opts.status } : {});
+  // Bounded discriminator: status is the only variable (a small enum) → no key blowup.
+  return cachedByStore(
+    storeId,
+    "products-list",
+    [opts?.status ?? "all"],
+    [productsTag(storeId)],
+    () => Products.findMany(storeId, opts?.status ? { status: opts.status } : {}),
+  );
 }
 
 /** A single product by Mongo id, scoped to the store. */
@@ -37,7 +46,16 @@ export async function getProductByHandle(
     const found = scoped(mockProducts, storeId).find((p) => p.handle === handle);
     return found ? resolve(found) : null;
   }
-  return Products.findOne(storeId, { handle });
+  // Per-handle tag so a single product write busts just its PDP entry. skipNull so
+  // a not-yet-created handle isn't pinned as a 404 until the TTL.
+  return cachedByStore(
+    storeId,
+    "product-by-handle",
+    [handle],
+    [productTag(storeId, handle), productsTag(storeId)],
+    () => Products.findOne(storeId, { handle }),
+    { skipNull: true },
+  );
 }
 
 export type ProductSort = "newest" | "price_asc" | "price_desc" | "title";
@@ -110,8 +128,30 @@ export async function searchProducts(storeId: string, query: ProductQuery): Prom
     const rx = new RegExp(escapeRegex(q), "i");
     filter.$or = [{ title: rx }, { tags: rx }, { productType: rx }, { vendor: rx }];
   }
-  const rows = await Products.findMany(storeId, filter);
-  return sortProducts(rows, query.sort);
+
+  const run = async () => sortProducts(await Products.findMany(storeId, filter), query.sort);
+
+  // DO NOT cache free-text search: arbitrary `q` = unbounded key cardinality, a
+  // cache-blowup / memory-amplification risk. Only the BOUNDED faceted reads
+  // (status / tag / productType / sort — all small enums or finite facets) are
+  // cached. Free-text falls through to a live DB query every time.
+  if (q) return run();
+
+  // Stable serialization of the bounded facet set so two equivalent queries hit
+  // the same key regardless of object key order.
+  const discriminator = JSON.stringify({
+    status: query.status ?? null,
+    productType: query.productType ?? null,
+    tag: query.tag ?? null,
+    sort: query.sort ?? null,
+  });
+  return cachedByStore(
+    storeId,
+    "products-search",
+    [discriminator],
+    [productsTag(storeId)],
+    run,
+  );
 }
 
 /** Distinct active-product facets for the storefront filter UI (types + tags). */
@@ -139,7 +179,16 @@ export async function getProductsByIds(storeId: string, ids: string[]): Promise<
     const ordered = ids.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p));
     return resolve(ordered);
   }
-  const rows = await Products.findMany(storeId, { _id: { $in: ids } });
+  // Bounded: the id list comes from a section config (featured_products), not free
+  // user input — a stable join keys it. Order is reapplied after the cached fetch.
+  const discriminator = [...ids].sort().join(",");
+  const rows = await cachedByStore(
+    storeId,
+    "products-by-ids",
+    [discriminator],
+    [productsTag(storeId)],
+    () => Products.findMany(storeId, { _id: { $in: ids } }),
+  );
   // Preserve the caller's requested order (Mongo returns natural order).
   const byId = new Map(rows.map((p) => [p._id, p]));
   return ids.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p));

@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { themeTag } from "@/lib/cache/tags";
 import {
   saveThemeConfig,
   listThemeVersions,
@@ -32,6 +33,8 @@ export async function saveThemeConfigAction(
   if (!saved) return { ok: false };
   revalidatePath("/builder");
   revalidatePath("/preview");
+  // The live storefront SSRs this config — drop the cached theme read.
+  revalidateTag(themeTag(storeId));
   return { ok: true };
 }
 
@@ -57,5 +60,6 @@ export async function restoreThemeVersionAction(
   });
   revalidatePath("/builder");
   revalidatePath("/preview");
+  revalidateTag(themeTag(storeId));
   return { ok: true };
 }

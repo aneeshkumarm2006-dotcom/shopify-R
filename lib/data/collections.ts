@@ -3,12 +3,20 @@ import { mockCollections, mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Collections, Products } from "@/lib/db";
 import { filterProductsByRules } from "./collection-rules";
+import { cachedByStore } from "@/lib/cache/cached";
+import { collectionsTag, productsTag } from "@/lib/cache/tags";
 
 export type { CollectionInput } from "@/types";
 
 export async function getCollections(storeId: string): Promise<Collection[]> {
   if (!isDbConfigured()) return resolve(scoped(mockCollections, storeId));
-  return Collections.findMany(storeId);
+  return cachedByStore(
+    storeId,
+    "collections-list",
+    [],
+    [collectionsTag(storeId)],
+    () => Collections.findMany(storeId),
+  );
 }
 
 export async function getCollection(storeId: string, handle: string): Promise<Collection | null> {
@@ -16,7 +24,14 @@ export async function getCollection(storeId: string, handle: string): Promise<Co
     const found = scoped(mockCollections, storeId).find((c) => c.handle === handle);
     return found ? resolve(found) : null;
   }
-  return Collections.findOne(storeId, { handle });
+  return cachedByStore(
+    storeId,
+    "collection-by-handle",
+    [handle],
+    [collectionsTag(storeId)],
+    () => Collections.findOne(storeId, { handle }),
+    { skipNull: true },
+  );
 }
 
 /** A single collection by Mongo id, scoped to the store (admin editor). */
@@ -65,21 +80,31 @@ export async function getCollectionProducts(
     return resolve(members);
   }
 
-  const collection = await Collections.findOne(storeId, { handle });
-  if (!collection) return [];
+  // Tag BOTH collections AND products: a smart collection's membership derives
+  // from products, so a product write must be able to bust this entry too.
+  return cachedByStore(
+    storeId,
+    "collection-products",
+    [handle],
+    [collectionsTag(storeId), productsTag(storeId)],
+    async () => {
+      const collection = await Collections.findOne(storeId, { handle });
+      if (!collection) return [];
 
-  // Smart collection: membership is whichever active products match the rules.
-  if (collection.kind === "smart") {
-    const active = await Products.findMany(storeId, { status: "active" });
-    return filterProductsByRules(active, collection.rules);
-  }
+      // Smart collection: membership is whichever active products match the rules.
+      if (collection.kind === "smart") {
+        const active = await Products.findMany(storeId, { status: "active" });
+        return filterProductsByRules(active, collection.rules);
+      }
 
-  const rows = await Products.findMany(storeId, { _id: { $in: collection.productIds } });
-  // Preserve curated membership order.
-  const byId = new Map(rows.map((p) => [p._id, p]));
-  return collection.productIds
-    .map((id) => byId.get(id))
-    .filter((p): p is Product => Boolean(p));
+      const rows = await Products.findMany(storeId, { _id: { $in: collection.productIds } });
+      // Preserve curated membership order.
+      const byId = new Map(rows.map((p) => [p._id, p]));
+      return collection.productIds
+        .map((id) => byId.get(id))
+        .filter((p): p is Product => Boolean(p));
+    },
+  );
 }
 
 /* ============================================================

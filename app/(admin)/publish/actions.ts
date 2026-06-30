@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import type { StoreStatus } from "@/types";
 import { publishStore, unpublishStore, scheduleStorePublish, PublishError, recordEvent } from "@/lib/data";
+import { storeTag, recordTag, subdomainTag } from "@/lib/cache/tags";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
@@ -25,6 +26,18 @@ function revalidateStatusSurfaces() {
   revalidatePath("/preview");
 }
 
+/**
+ * Bust the storefront data cache after a live-status change. Coarse `storeTag` +
+ * `recordTag` drop getStore; `subdomainTag` drops the subdomain-resolution entry —
+ * so `resolveStorefront` re-reads fresh: a just-published store appears at once,
+ * and an unpublished one re-reads as `draft` → notFound().
+ */
+function revalidateStoreServing(storeId: string, subdomain?: string) {
+  revalidateTag(storeTag(storeId));
+  revalidateTag(recordTag(storeId));
+  if (subdomain) revalidateTag(subdomainTag(subdomain));
+}
+
 export async function publishStoreAction(): Promise<PublishResult> {
   const storeId = await requireMerchantStoreId();
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
@@ -37,6 +50,7 @@ export async function publishStoreAction(): Promise<PublishResult> {
       target: { kind: "store", id: storeId },
     });
     revalidateStatusSurfaces();
+    revalidateStoreServing(storeId, store.subdomain);
     return { ok: true, status: store.status };
   } catch (err) {
     if (err instanceof PublishError) return { ok: false, error: err.message };
@@ -80,6 +94,7 @@ export async function unpublishStoreAction(): Promise<PublishResult> {
       target: { kind: "store", id: storeId },
     });
     revalidateStatusSurfaces();
+    revalidateStoreServing(storeId, store.subdomain);
     return { ok: true, status: store.status };
   } catch (err) {
     if (err instanceof PublishError) return { ok: false, error: err.message };

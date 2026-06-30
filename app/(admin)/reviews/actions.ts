@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { setReviewStatus, deleteReview, recordEvent } from "@/lib/data";
+import { reviewsTag } from "@/lib/cache/tags";
 import type { ReviewStatus } from "@/types";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
@@ -27,6 +28,7 @@ export async function moderateReview(
     });
     revalidatePath("/reviews");
     revalidatePath(`/products/${updated.productId}`);
+    revalidateTag(reviewsTag(storeId));
   }
   return { ok: Boolean(updated) };
 }
@@ -43,6 +45,7 @@ export async function removeReview(id: string): Promise<{ ok: boolean }> {
       target: { kind: "review", id },
     });
     revalidatePath("/reviews");
+    revalidateTag(reviewsTag(storeId));
   }
   return { ok };
 }
