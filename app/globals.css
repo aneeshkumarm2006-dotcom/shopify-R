@@ -69,10 +69,11 @@
     color: var(--text-on-accent);
   }
 
-  /* Focus-visible: 2px ring, 2px offset, everywhere (§3) */
+  /* Keyboard focus ring — consistent everywhere, driven by tokens. Uses :focus-visible
+     so it appears for keyboard users only; mouse clicks stay visually quiet (§3, §D). */
   :focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
+    outline: var(--focus-ring-width) solid var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
     border-radius: var(--radius-sm);
   }
 
@@ -92,12 +93,43 @@
     background-clip: padding-box;
   }
 
+  /* Reduced motion (§2 mandate): keep opacity/color fades that aid comprehension,
+     but remove MOVEMENT — no lifts, presses, slides, or scale-ins. We neutralize the
+     hover/press transforms on the interactive primitives and collapse movement-based
+     entrance keyframes to a plain fade, rather than freezing every transition globally. */
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
+    /* Kill tactile transforms on everything the user touches. */
+    .btn:active:not(:disabled),
+    .btn:hover:not(:disabled),
+    .iconbtn:active:not(:disabled),
+    .viewtab:active,
+    .card-interactive:hover,
+    .card-interactive:active,
+    .admin-nav-item:active {
+      transform: none !important;
+    }
+    /* Switch knob still needs to move to convey on/off — keep it, just no overshoot. */
+    .switch::after {
+      transition-timing-function: var(--ease-standard) !important;
+    }
+    /* Collapse movement-based entrances to a calm fade only. */
+    .menu,
+    .modal,
+    .cmdk,
+    .sheet,
+    .toast,
+    .tab.active::after,
+    .admin-nav-item.active::before {
+      animation: rmFade var(--dur-base) var(--ease-out) !important;
+      transform: none !important;
+    }
+  }
+  @keyframes rmFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 }
