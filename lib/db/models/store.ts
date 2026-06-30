@@ -127,6 +127,32 @@ StoreMemberSchema.index({ storeId: 1, email: 1 }, { unique: true });
 StoreMemberSchema.index({ email: 1 });
 
 /* ============================================================
+   Custom domains (Phase 6+) — per-store domain connection + verification.
+   `domain` is globally unique: a domain belongs to exactly one store
+   platform-wide, which is the core security invariant here.
+   ============================================================ */
+const CustomDomainSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true, index: true },
+    domain: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    isApex: { type: Boolean, required: true },
+    isPrimary: { type: Boolean, default: false },
+    verificationStatus: { type: String, enum: ["pending", "verified", "failed"], default: "pending" },
+    verificationDetails: { type: Schema.Types.Mixed, default: () => [] },
+    sslStatus: { type: String, enum: ["pending", "issued", "failed"], default: "pending" },
+    lastCheckedAt: { type: Date },
+    errorMessage: { type: String },
+    addedBy: { type: String },
+  },
+  baseSchemaOptions,
+);
+// Only one primary domain per store — DB-enforced, not just app-level, to prevent a race.
+CustomDomainSchema.index({ storeId: 1, isPrimary: 1 }, { unique: true, partialFilterExpression: { isPrimary: true } });
+// Cron sweep query (re-check pending domains, oldest-checked first).
+CustomDomainSchema.index({ verificationStatus: 1, lastCheckedAt: 1 });
+
+/* ============================================================
    Locations (Phase 6) — multi-location inventory.
    ============================================================ */
 const LocationSchema = new Schema(
@@ -145,5 +171,6 @@ export const StoreModel = defineModel("Store", StoreSchema);
 export const ThemeConfigModel = defineModel("ThemeConfig", ThemeConfigSchema);
 export const ThemeVersionModel = defineModel("ThemeVersion", ThemeVersionSchema);
 export const StoreMemberModel = defineModel("StoreMember", StoreMemberSchema);
+export const CustomDomainModel = defineModel("CustomDomain", CustomDomainSchema);
 export const LocationModel = defineModel("Location", LocationSchema);
 export const SubscriptionModel = defineModel("Subscription", SubscriptionSchema);

@@ -27,11 +27,15 @@ export function StoreShell({
   store,
   customer = null,
   navLinks = [],
+  basePath,
   children,
 }: {
   store: Store;
   customer?: StorefrontCustomer | null;
   navLinks?: { label: string; href: string }[];
+  /** Override the tenant path prefix. Pass `""` for custom-domain requests where the
+   *  visitor is at the domain root; omit to fall back to `/s/<subdomain>`. */
+  basePath?: string;
   children: ReactNode;
 }) {
   return (
@@ -40,7 +44,7 @@ export function StoreShell({
       storeName={store.name}
       currency={storeCurrency(store.settings)}
       ageGateEnabled={store.ageGate.enabled}
-      basePath={storePath(store.subdomain)}
+      basePath={basePath ?? storePath(store.subdomain)}
       customer={customer}
       navLinks={navLinks}
     >

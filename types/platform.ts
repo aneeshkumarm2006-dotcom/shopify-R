@@ -190,5 +190,10 @@ export const EVENT_TYPES = [
   "settings.code_injection_changed",
   "impersonation.started",
   "impersonation.ended",
+  "domain.added",
+  "domain.verified",
+  "domain.failed",
+  "domain.removed",
+  "domain.set_primary",
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

@@ -19,6 +19,13 @@ export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN || "ourapp.com";
  */
 export const STORE_SUBDOMAIN_HEADER = "x-store-subdomain";
 
+/**
+ * Request header the middleware stamps with the correct basePath for storefront links.
+ * `/s/<subdomain>` for path-routed stores; `""` (empty string) for custom-domain stores
+ * (where the visitor is already at the root — no prefix should be prepended to links).
+ */
+export const STORE_BASE_PATH_HEADER = "x-store-base-path";
+
 /** Reserved subdomains that bypass to the app shell, never a tenant (PRD §9). */
 export const RESERVED_SUBDOMAINS = [
   "admin",
@@ -64,6 +71,23 @@ export function parseStoreSubdomain(host: string | null | undefined): string | n
   const sub = label.split(".")[0] ?? "";
   if (!sub || RESERVED_SUBDOMAINS.includes(sub) || !isDnsSafeSubdomain(sub)) return null;
   return sub;
+}
+
+/**
+ * Resolve a request `Host` header to a store subdomain via a pre-fetched custom-
+ * domain map (`{ [lowercased hostname]: subdomain }`), e.g. as read from the Edge
+ * Config routing cache. Pure — the actual Edge Config I/O happens in
+ * `middleware.ts`; this just does the lookup/string-normalization so it stays
+ * testable without mocking network calls. Returns `null` when there's no host or no
+ * match (host isn't a verified custom domain we know about).
+ */
+export function resolveCustomDomainSubdomain(
+  host: string | null | undefined,
+  domainMap: Record<string, string>,
+): string | null {
+  if (!host) return null;
+  const hostname = (host.split(":")[0] ?? host).toLowerCase();
+  return domainMap[hostname] ?? null;
 }
 
 /**

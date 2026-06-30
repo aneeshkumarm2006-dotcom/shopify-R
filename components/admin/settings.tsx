@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Store, Subscription, SubscriptionPlan } from "@/types";
 import { saveStoreSettings, setPlanAction } from "@/app/(admin)/settings/actions";
@@ -45,8 +46,8 @@ function ratesToDrafts(rates: { id: string; label: string; price: number; freeOv
 /**
  * Settings (DESIGN §4.10) — store info · brand/logo · domain · SEO defaults · code
  * injection · age gate · plan/billing, plus a danger zone (unpublish/delete). Code
- * injection + custom-domain are UI-only signposts here; sanitization + persistence
- * land in Stage 11/14. Custom domains stay a disabled "Coming soon" row (PRD §10).
+ * injection sanitization + persistence land in Stage 11/14. The custom-domain row
+ * links out to the full `/settings/domains` manager (connect-your-own-domain flow).
  */
 export function Settings({
   store,
@@ -595,11 +596,37 @@ export function Settings({
                 Check availability
               </Button>
             </div>
-            <ComingSoonRow
-              icon="external"
-              title="Custom domain"
-              body="Connect your own domain with SSL."
-            />
+            <Link
+              href="/settings/domains"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                padding: "var(--space-3) var(--space-4)",
+                background: "var(--surface-subtle)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              <Icon name="external" size={16} style={{ color: "var(--text-muted)" }} aria-hidden />
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    fontWeight: 500,
+                    color: "var(--text-strong)",
+                  }}
+                >
+                  Custom domains
+                </div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  Connect your own domain with automatic SSL.
+                </div>
+              </div>
+              <Icon name="chevronRight" size={14} style={{ color: "var(--text-muted)" }} aria-hidden />
+            </Link>
           </div>
         </Card>
 
@@ -1015,48 +1042,6 @@ function SettlementRow({
         <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{body}</div>
       </div>
       <Switch checked={checked} onChange={onChange} aria-label={title} />
-    </div>
-  );
-}
-
-function ComingSoonRow({
-  icon,
-  title,
-  body,
-}: {
-  icon: "external";
-  title: string;
-  body: string;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-3)",
-        padding: "var(--space-3) var(--space-4)",
-        background: "var(--surface-subtle)",
-        border: "1px dashed var(--border-strong)",
-        borderRadius: "var(--radius-md)",
-        opacity: 0.85,
-      }}
-    >
-      <Icon name={icon} size={16} style={{ color: "var(--text-muted)" }} aria-hidden />
-      <div style={{ flex: 1 }}>
-        <div
-          style={{
-            fontSize: "var(--text-sm)",
-            fontWeight: 500,
-            color: "var(--text-strong)",
-          }}
-        >
-          {title}
-        </div>
-        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{body}</div>
-      </div>
-      <Pill tone="muted" dot={false}>
-        Coming soon
-      </Pill>
     </div>
   );
 }

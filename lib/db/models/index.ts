@@ -11,6 +11,7 @@ export {
   ThemeConfigModel,
   ThemeVersionModel,
   StoreMemberModel,
+  CustomDomainModel,
   LocationModel,
   SubscriptionModel,
 } from "./store";
@@ -37,3 +38,4 @@ export {
   PageViewModel,
 } from "./platform";
 export { CounterModel, type CounterDoc } from "./counter";
+export { RateLimitModel } from "./rate-limit";

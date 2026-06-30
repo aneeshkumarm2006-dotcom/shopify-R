@@ -230,6 +230,34 @@ export interface StoreMember extends Timestamps {
 }
 
 /* ============================================================
+   Custom domains (Phase 6+) — per-store domain connection + verification.
+   `domain` is globally unique across the platform (enforced at the schema
+   level): a domain belongs to exactly one store, ever.
+   ============================================================ */
+export type DomainVerificationStatus = "pending" | "verified" | "failed";
+export type DomainSslStatus = "pending" | "issued" | "failed";
+
+export interface DomainVerificationChallenge {
+  type: "TXT" | "CNAME" | "A";
+  name: string;
+  value: string;
+}
+
+export interface CustomDomain extends Timestamps {
+  _id: Id;
+  storeId: Id;
+  domain: string; // fully-qualified, lowercase, e.g. "cooltshirts.com" or "shop.cooltshirts.com"
+  isApex: boolean; // true for "cooltshirts.com", false for "shop.cooltshirts.com" — drives A vs CNAME instructions
+  isPrimary: boolean; // only one true per storeId; only a verified domain may be primary
+  verificationStatus: DomainVerificationStatus;
+  verificationDetails: DomainVerificationChallenge[]; // DNS records Vercel told us to publish
+  sslStatus: DomainSslStatus;
+  lastCheckedAt?: ISODate;
+  errorMessage?: string;
+  addedBy?: Id; // user who added it (audit)
+}
+
+/* ============================================================
    5.10 subscriptions (platform billing — stub)
    ============================================================ */
 export type SubscriptionPlan = "free" | "standard";

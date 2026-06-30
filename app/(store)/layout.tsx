@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { getCurrentCustomer } from "@/lib/customer/session";
 import { getCollections } from "@/lib/data";
@@ -8,6 +9,8 @@ import {
   StoreInjectionBody,
   StoreInjectionHead,
 } from "@/components/storefront/store-code-injection";
+import { STORE_BASE_PATH_HEADER } from "@/lib/tenant/host";
+import { storePath } from "@/lib/format";
 
 /**
  * Storefront ("Counter") route-group layout (DESIGN §5). It resolves the current
@@ -25,6 +28,14 @@ import {
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const store = await resolveStorefront();
   if (!store) notFound();
+
+  // Determine basePath: "" for custom-domain requests (visitor is at the domain root,
+  // links should be root-relative), "/s/<subdomain>" for path-routed requests.
+  // The middleware stamps STORE_BASE_PATH_HEADER; absence means dev/preview fallback.
+  const headersList = await headers();
+  const basePath = headersList.has(STORE_BASE_PATH_HEADER)
+    ? (headersList.get(STORE_BASE_PATH_HEADER) ?? "")
+    : storePath(store.subdomain);
 
   // Resolve the signed-in shopper (Phase 3) so the shell can personalize chrome and
   // key the cart to their account. Anonymous → null, exactly as before.
@@ -46,6 +57,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       {store.subdomain && <TrackPageview subdomain={store.subdomain} />}
       <StoreShell
         store={store}
+        basePath={basePath}
         navLinks={navLinks}
         customer={
           customer

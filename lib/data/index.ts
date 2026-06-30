@@ -20,6 +20,7 @@ export * from "./staff";
 export * from "./products";
 export * from "./csv";
 export * from "./discounts";
+export * from "./domains";
 export * from "./collections";
 export * from "./collection-rules";
 export * from "./reviews";
