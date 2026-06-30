@@ -13,6 +13,7 @@ import {
   DomainError,
 } from "@/lib/data";
 import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { isDbConfigured } from "@/lib/db";
 import { APP_DOMAIN } from "@/lib/tenant/host";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -67,7 +68,7 @@ function isPlatformDomain(domain: string): boolean {
 function friendlyVercelError(err: unknown): string {
   if (err instanceof VercelDomainError) {
     if (err.code === "domain_already_in_use" || err.status === 409) {
-      return "This domain is already connected to another project. Remove it there first, or use a different domain.";
+      return "This domain is already registered on Vercel — either to another project, or from an earlier attempt. Remove it from the Vercel dashboard first, then try again.";
     }
     if (err.status === 401 || err.status === 403) {
       return "Custom domains aren't available right now. Please try again later.";
@@ -103,6 +104,15 @@ export async function addDomainAction(
     return { ok: false, error: "You can't connect our platform's own domain." };
   }
 
+  // Guard BEFORE touching Vercel: `addProjectDomain` registers the domain on the
+  // Vercel project, but if the subsequent DB write can't run (no database) the domain
+  // is left orphaned on Vercel — registered there yet invisible to the app, unable to
+  // be removed via the UI. Refuse up front when there's no DB so we never register a
+  // domain we can't also persist.
+  if (!isDbConfigured()) {
+    return { ok: false, error: "Custom domains need a database connection." };
+  }
+
   let vercelResult;
   try {
     vercelResult = await addProjectDomain(domain);
@@ -115,6 +125,18 @@ export async function addDomainAction(
   try {
     created = await createPendingDomain(storeId, domain, isApexDomain(domain), (await getActorUserId()) ?? undefined);
   } catch (err) {
+    // The Vercel registration above already succeeded; if we can't record the domain
+    // in our DB, roll it back off the Vercel project so it doesn't orphan. Best-effort:
+    // a failed rollback is logged (and the cron/manual cleanup can catch it), but we
+    // still surface the original save error to the merchant.
+    try {
+      await removeProjectDomain(domain);
+    } catch (rollbackErr) {
+      console.error("[domains] rollback removeProjectDomain failed after DB save error", {
+        domain,
+        rollbackErr,
+      });
+    }
     const message = err instanceof DomainError ? err.message : "Couldn't save this domain.";
     return { ok: false, error: message };
   }
