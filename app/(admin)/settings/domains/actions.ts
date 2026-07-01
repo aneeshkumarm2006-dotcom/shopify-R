@@ -339,7 +339,13 @@ export async function refreshDomainStatusAction(
   if (!updated) return { ok: false, error: "Domain not found." };
 
   const actorUserId = await getActorUserId();
-  if (!wasVerified && verificationStatus === "verified") {
+  if (verificationStatus === "verified") {
+    // Re-sync the routing cache on EVERY verified refresh, not just the first
+    // transition. Otherwise a domain that verified while Edge Config was
+    // unavailable/not-yet-connected would never get its mapping written — Refresh
+    // would skip it as "already verified", and the cron only sweeps `pending`
+    // domains. The upsert is idempotent, so this makes "Refresh status" a reliable
+    // self-heal / re-sync button for the edge routing cache.
     const store = await getStore(storeId);
     if (store?.subdomain) {
       try {
@@ -347,20 +353,24 @@ export async function refreshDomainStatusAction(
       } catch (err) {
         // Don't fail the whole status-refresh on a routing-cache write hiccup — the
         // domain is already marked verified in Mongo; only the edge fast-path cache
-        // is degraded until the next successful sync (cron sweep will retry it).
+        // is degraded until the next successful sync.
         console.error("[domains] syncVerifiedDomainToEdgeConfig failed (continuing)", {
           domain: existing.domain,
           err,
         });
       }
     }
-    await recordEvent({
-      type: "domain.verified",
-      storeId,
-      actorUserId,
-      target: { kind: "store", id: storeId },
-      metadata: { domain: existing.domain },
-    });
+    // Record the verification EVENT only on the actual transition (avoid dupes on
+    // every subsequent re-sync refresh).
+    if (!wasVerified) {
+      await recordEvent({
+        type: "domain.verified",
+        storeId,
+        actorUserId,
+        target: { kind: "store", id: storeId },
+        metadata: { domain: existing.domain },
+      });
+    }
   } else if (verificationStatus === "failed") {
     await recordEvent({
       type: "domain.failed",
