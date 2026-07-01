@@ -22,6 +22,7 @@ import {
   getProjectDomainConfig,
   removeProjectDomain,
   isApexDomain,
+  resolveApexIp,
   VercelDomainError,
 } from "@/lib/vercel/domains";
 import { syncVerifiedDomainToEdgeConfig, removeDomainFromEdgeConfig } from "@/lib/vercel/edge-config";
@@ -72,14 +73,19 @@ function isPlatformDomain(domain: string): boolean {
  *    comes back empty), so we always synthesize it ourselves from Vercel's standard
  *    targets: an `A` record to the apex IP for a root domain, a `CNAME` for a subdomain.
  *    Without this, a domain with no TXT challenge would show NO instructions at all.
+ *
+ * `apexIp` is the resolved apex A-record value (Vercel assigns it PER PROJECT, so it's
+ * threaded in from the config response via `resolveApexIp` rather than hardcoded). It's
+ * ignored on the CNAME (subdomain) path, whose target `cname.vercel-dns.com` is stable.
  */
 function buildDnsInstructions(
   domain: string,
   apex: boolean,
   vercelChallenges: DomainVerificationChallenge[],
+  apexIp: string,
 ): DomainVerificationChallenge[] {
   const routing: DomainVerificationChallenge = apex
-    ? { type: "A", name: "@", value: "76.76.21.21" }
+    ? { type: "A", name: "@", value: apexIp }
     : {
         type: "CNAME",
         // host part (everything before the registrable domain), e.g. "shop" for
@@ -174,8 +180,13 @@ export async function addDomainAction(
   // domain almost always has DNS not-yet-pointed → "pending" until a refresh/cron (or
   // this check, if the merchant pre-pointed DNS) confirms it's correctly configured.
   let misconfigured = true;
+  let recommendedApexIp: string | null = null;
   try {
-    misconfigured = (await getProjectDomainConfig(domain)).misconfigured;
+    const config = await getProjectDomainConfig(domain);
+    misconfigured = config.misconfigured;
+    // Reuse the apex IP Vercel recommends in this same config response — no extra
+    // round-trip. Falls back to env/default inside resolveApexIp when it's null.
+    recommendedApexIp = config.recommendedApexIp;
   } catch {
     // Can't check → assume not-yet-configured (pending). Safer than claiming verified;
     // the refresh button / cron sweep will promote it once DNS actually resolves.
@@ -185,7 +196,12 @@ export async function addDomainAction(
 
   const updated = await updateDomainVerification(created._id, {
     verificationStatus: live ? "verified" : "pending",
-    verificationDetails: buildDnsInstructions(domain, isApexDomain(domain), vercelResult.verification),
+    verificationDetails: buildDnsInstructions(
+      domain,
+      isApexDomain(domain),
+      vercelResult.verification,
+      resolveApexIp(recommendedApexIp),
+    ),
     sslStatus: live ? "issued" : "pending",
   });
 
@@ -289,7 +305,7 @@ export async function refreshDomainStatusAction(
   const existing = await getDomainById(storeId, domainId);
   if (!existing) return { ok: false, error: "Domain not found." };
 
-  let config: { misconfigured: boolean };
+  let config: { misconfigured: boolean; recommendedApexIp: string | null };
   let info;
   try {
     [config, info] = await Promise.all([
@@ -311,7 +327,12 @@ export async function refreshDomainStatusAction(
 
   const updated = await updateDomainVerification(existing._id, {
     verificationStatus,
-    verificationDetails: buildDnsInstructions(existing.domain, existing.isApex, info.verification),
+    verificationDetails: buildDnsInstructions(
+      existing.domain,
+      existing.isApex,
+      info.verification,
+      resolveApexIp(config.recommendedApexIp),
+    ),
     sslStatus: nowVerified ? "issued" : "pending",
     errorMessage,
   });
