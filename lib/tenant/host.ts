@@ -91,6 +91,41 @@ export function resolveCustomDomainSubdomain(
 }
 
 /**
+ * FNV-1a 32-bit hash → base36. Deterministic, synchronous, and dependency-free, so
+ * it runs identically in the Edge middleware (read) and the Node write path.
+ */
+function fnv1a32(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * The Edge Config KEY under which a custom domain's routing entry is stored.
+ *
+ * Edge Config keys accept only `[A-Za-z0-9_-]` and max 32 chars — so a raw hostname
+ * (dots are invalid, and long domains blow the length cap) CANNOT be used directly;
+ * writes keyed by the bare domain are silently rejected. We hash the hostname to a
+ * short, always-valid, deterministic key instead. Hash collisions are made SAFE by
+ * storing the real hostname inside the entry's VALUE and verifying it on read (a
+ * collision then just misses, never mis-routes one tenant's domain to another).
+ */
+export function edgeConfigDomainKey(host: string): string {
+  const hostname = (host.split(":")[0] ?? host).trim().toLowerCase();
+  return `d_${fnv1a32(hostname)}`;
+}
+
+/** The VALUE shape stored at `edgeConfigDomainKey(host)`: the canonical hostname
+ * (for collision-safe verification on read) and the store subdomain to route to. */
+export interface EdgeDomainEntry {
+  h: string; // canonical lowercased hostname
+  s: string; // store subdomain
+}
+
+/**
  * Build the public origin (`scheme://host`) for the current request, trusting the
  * `Host` header so per-store `robots.txt` / `sitemap.xml` URLs carry the tenant's own
  * subdomain (Next's `nextUrl.origin` reflects the server bind host, not the Host).

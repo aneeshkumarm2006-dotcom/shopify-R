@@ -2,10 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@vercel/edge-config";
 import {
   APP_DOMAIN,
+  edgeConfigDomainKey,
   isDnsSafeSubdomain,
   RESERVED_SUBDOMAINS,
   STORE_SUBDOMAIN_HEADER,
   STORE_BASE_PATH_HEADER,
+  type EdgeDomainEntry,
 } from "@/lib/tenant/host";
 
 /**
@@ -111,8 +113,13 @@ async function resolveViaEdgeConfig(hostname: string, req: NextRequest): Promise
   let subdomain: string | null = null;
   try {
     const client = createClient(process.env.EDGE_CONFIG);
-    const value = await client.get(hostname);
-    if (typeof value === "string" && value) subdomain = value;
+    // Entry is stored under a hashed key (Edge Config keys can't hold dots / >32 chars).
+    // The stored `h` (hostname) is re-checked to make a hash collision a safe MISS
+    // rather than a cross-tenant mis-route.
+    const value = await client.get<EdgeDomainEntry>(edgeConfigDomainKey(hostname));
+    if (value && typeof value === "object" && value.h === hostname && typeof value.s === "string") {
+      subdomain = value.s;
+    }
   } catch (err) {
     // Soft failure: a missing/misconfigured/slow Edge Config must never 500 the
     // request or block traffic on hosts that aren't custom domains.

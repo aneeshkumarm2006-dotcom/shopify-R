@@ -14,6 +14,8 @@
  * Server-only.
  */
 
+import { edgeConfigDomainKey, type EdgeDomainEntry } from "@/lib/tenant/host";
+
 const VERCEL_API_BASE = "https://api.vercel.com";
 
 interface EdgeConfigWriteEnv {
@@ -54,7 +56,7 @@ function getEdgeConfigWriteEnv(): EdgeConfigWriteEnv | null {
  * sandbox — same caveat as the Phase 2 Domains API wrapper. */
 async function patchEdgeConfigItem(
   env: EdgeConfigWriteEnv,
-  item: { operation: "upsert" | "delete"; key: string; value?: string },
+  item: { operation: "upsert" | "delete"; key: string; value?: unknown },
 ): Promise<void> {
   const res = await fetch(`${VERCEL_API_BASE}/v1/edge-config/${env.edgeConfigId}/items`, {
     method: "PATCH",
@@ -104,10 +106,15 @@ export async function syncVerifiedDomainToEdgeConfig(
     );
     return;
   }
+  const hostname = domain.trim().toLowerCase();
+  const entry: EdgeDomainEntry = { h: hostname, s: subdomain };
   await patchEdgeConfigItem(env, {
     operation: "upsert",
-    key: domain.trim().toLowerCase(),
-    value: subdomain,
+    // Key must be Edge-Config-safe ([A-Za-z0-9_-], ≤32 chars) — a raw domain (dots,
+    // length) is rejected. `edgeConfigDomainKey` hashes it; the hostname is kept in
+    // the value so middleware can verify it on read (collision-safe).
+    key: edgeConfigDomainKey(hostname),
+    value: entry,
   });
 }
 
@@ -130,6 +137,6 @@ export async function removeDomainFromEdgeConfig(domain: string): Promise<void> 
   }
   await patchEdgeConfigItem(env, {
     operation: "delete",
-    key: domain.trim().toLowerCase(),
+    key: edgeConfigDomainKey(domain),
   });
 }
