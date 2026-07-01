@@ -299,7 +299,10 @@ export async function setPrimaryDomainAction(domainId: string): Promise<{ ok: bo
 
 export async function refreshDomainStatusAction(
   domainId: string,
-): Promise<{ ok: true; domain: CustomDomain } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; domain: CustomDomain; routingError?: string }
+  | { ok: false; error: string }
+> {
   const storeId = await requireMerchantStoreId();
 
   const existing = await getDomainById(storeId, domainId);
@@ -339,6 +342,9 @@ export async function refreshDomainStatusAction(
   if (!updated) return { ok: false, error: "Domain not found." };
 
   const actorUserId = await getActorUserId();
+  // Surfaced to the admin when a domain is verified but its routing cache didn't sync
+  // (so it won't actually serve the store) — no longer a silent server-log-only failure.
+  let routingError: string | undefined;
   if (verificationStatus === "verified") {
     // Re-sync the routing cache on EVERY verified refresh, not just the first
     // transition. Otherwise a domain that verified while Edge Config was
@@ -348,17 +354,10 @@ export async function refreshDomainStatusAction(
     // self-heal / re-sync button for the edge routing cache.
     const store = await getStore(storeId);
     if (store?.subdomain) {
-      try {
-        await syncVerifiedDomainToEdgeConfig(existing.domain, store.subdomain);
-      } catch (err) {
-        // Don't fail the whole status-refresh on a routing-cache write hiccup — the
-        // domain is already marked verified in Mongo; only the edge fast-path cache
-        // is degraded until the next successful sync.
-        console.error("[domains] syncVerifiedDomainToEdgeConfig failed (continuing)", {
-          domain: existing.domain,
-          err,
-        });
-      }
+      const sync = await syncVerifiedDomainToEdgeConfig(existing.domain, store.subdomain);
+      if (!sync.synced) routingError = sync.reason ?? "Routing cache sync failed.";
+    } else {
+      routingError = "This store has no subdomain yet, so the domain can't route.";
     }
     // Record the verification EVENT only on the actual transition (avoid dupes on
     // every subsequent re-sync refresh).
@@ -382,5 +381,5 @@ export async function refreshDomainStatusAction(
   }
 
   revalidatePath(DOMAIN_PATH);
-  return { ok: true, domain: updated };
+  return { ok: true, domain: updated, routingError };
 }

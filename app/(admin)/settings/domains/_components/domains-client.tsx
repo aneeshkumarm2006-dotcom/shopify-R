@@ -218,12 +218,19 @@ export function DomainsClient({ initialDomains, subdomain }: DomainsClientProps)
         setDomains((prev) =>
           prev.map((d) => (d._id === res.domain._id ? res.domain : d)),
         );
-        toast(
-          res.domain.verificationStatus === "verified"
-            ? "Domain verified!"
-            : "Status refreshed.",
-          { tone: res.domain.verificationStatus === "verified" ? "success" : "info" },
-        );
+        if (res.routingError) {
+          // Verified, but the domain won't actually serve the store until routing syncs.
+          toast(`Verified, but routing didn't activate: ${res.routingError}`, {
+            tone: "critical",
+          });
+        } else {
+          toast(
+            res.domain.verificationStatus === "verified"
+              ? "Domain verified!"
+              : "Status refreshed.",
+            { tone: res.domain.verificationStatus === "verified" ? "success" : "info" },
+          );
+        }
       } else {
         toast(res.error ?? "Couldn't refresh status.", { tone: "critical" });
       }

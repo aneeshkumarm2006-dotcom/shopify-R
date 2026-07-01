@@ -97,25 +97,34 @@ async function patchEdgeConfigItem(
 export async function syncVerifiedDomainToEdgeConfig(
   domain: string,
   subdomain: string,
-): Promise<void> {
+): Promise<{ synced: boolean; reason?: string }> {
   const env = getEdgeConfigWriteEnv();
   if (!env) {
-    console.warn(
-      "[vercel/edge-config] EDGE_CONFIG or VERCEL_API_TOKEN not set — skipping routing-cache sync",
-      { domain },
-    );
-    return;
+    const reason =
+      "The routing cache isn't configured on this deployment (EDGE_CONFIG or VERCEL_API_TOKEN missing).";
+    console.warn("[vercel/edge-config] " + reason + " — skipping routing-cache sync", { domain });
+    return { synced: false, reason };
   }
   const hostname = domain.trim().toLowerCase();
   const entry: EdgeDomainEntry = { h: hostname, s: subdomain };
-  await patchEdgeConfigItem(env, {
-    operation: "upsert",
-    // Key must be Edge-Config-safe ([A-Za-z0-9_-], ≤32 chars) — a raw domain (dots,
-    // length) is rejected. `edgeConfigDomainKey` hashes it; the hostname is kept in
-    // the value so middleware can verify it on read (collision-safe).
-    key: edgeConfigDomainKey(hostname),
-    value: entry,
-  });
+  try {
+    await patchEdgeConfigItem(env, {
+      operation: "upsert",
+      // Key must be Edge-Config-safe ([A-Za-z0-9_-], ≤32 chars) — a raw domain (dots,
+      // length) is rejected. `edgeConfigDomainKey` hashes it; the hostname is kept in
+      // the value so middleware can verify it on read (collision-safe).
+      key: edgeConfigDomainKey(hostname),
+      value: entry,
+    });
+    return { synced: true };
+  } catch (err) {
+    // Return the reason instead of throwing so the caller can surface it to the admin
+    // (a verified domain that didn't sync won't route — that must be visible, not
+    // hidden in server logs). The write failure is still logged with full detail.
+    const reason = err instanceof Error ? err.message : "Edge Config write failed.";
+    console.error("[vercel/edge-config] routing-cache write failed", { domain, err });
+    return { synced: false, reason };
+  }
 }
 
 /**
