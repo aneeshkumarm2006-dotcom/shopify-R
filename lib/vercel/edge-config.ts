@@ -21,6 +21,11 @@ const VERCEL_API_BASE = "https://api.vercel.com";
 interface EdgeConfigWriteEnv {
   token: string;
   edgeConfigId: string;
+  /** Vercel team id (`team_…`). REQUIRED for team-owned Edge Configs: the write API
+   * rejects team-less calls against a team-owned store even when the same token is
+   * accepted by the project-scoped domain APIs (their project id implies the team;
+   * the Edge Config endpoint has no such context). Optional for personal stores. */
+  teamId?: string;
 }
 
 /** Extract the Edge Config id (e.g. `ecfg_xxx`) from the `EDGE_CONFIG` connection
@@ -40,9 +45,10 @@ function parseEdgeConfigId(connectionString: string): string {
 function getEdgeConfigWriteEnv(): EdgeConfigWriteEnv | null {
   const connectionString = process.env.EDGE_CONFIG;
   const token = process.env.VERCEL_API_TOKEN;
+  const teamId = process.env.VERCEL_TEAM_ID?.trim() || undefined;
   if (!connectionString || !token) return null;
   try {
-    return { token, edgeConfigId: parseEdgeConfigId(connectionString) };
+    return { token, teamId, edgeConfigId: parseEdgeConfigId(connectionString) };
   } catch (err) {
     console.error("[vercel/edge-config] failed to parse EDGE_CONFIG connection string", err);
     return null;
@@ -58,7 +64,8 @@ async function patchEdgeConfigItem(
   env: EdgeConfigWriteEnv,
   item: { operation: "upsert" | "delete"; key: string; value?: unknown },
 ): Promise<void> {
-  const res = await fetch(`${VERCEL_API_BASE}/v1/edge-config/${env.edgeConfigId}/items`, {
+  const teamQuery = env.teamId ? `?teamId=${encodeURIComponent(env.teamId)}` : "";
+  const res = await fetch(`${VERCEL_API_BASE}/v1/edge-config/${env.edgeConfigId}/items${teamQuery}`, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${env.token}`,
@@ -72,9 +79,14 @@ async function patchEdgeConfigItem(
   let message = `Edge Config write failed (${res.status})`;
   try {
     const body = (await res.json()) as { error?: { message?: string } };
-    if (body?.error?.message) message = body.error.message;
+    if (body?.error?.message) message = `${body.error.message} (${res.status})`;
   } catch {
     /* non-JSON error body — keep the generic message */
+  }
+  // A 401/403/404 on a store the read SDK can see almost always means the store is
+  // team-owned and the call lacked a team scope — point straight at the fix.
+  if ((res.status === 401 || res.status === 403 || res.status === 404) && !env.teamId) {
+    message += " — if this Edge Config belongs to a Vercel team, set the VERCEL_TEAM_ID env var (Team Settings → General → Team ID) and redeploy.";
   }
   throw new Error(message);
 }
