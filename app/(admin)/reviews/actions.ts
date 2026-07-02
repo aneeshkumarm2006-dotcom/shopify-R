@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { setReviewStatus, deleteReview, recordEvent } from "@/lib/data";
 import type { ReviewStatus } from "@/types";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Review moderation actions (Phase 4). Reviews auto-publish; merchants hide abusive
@@ -14,7 +14,7 @@ export async function moderateReview(
   id: string,
   status: ReviewStatus,
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("content");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const updated = await setReviewStatus(storeId, id, status);
   if (updated) {
@@ -32,7 +32,7 @@ export async function moderateReview(
 }
 
 export async function removeReview(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("content");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteReview(storeId, id);
   if (ok) {

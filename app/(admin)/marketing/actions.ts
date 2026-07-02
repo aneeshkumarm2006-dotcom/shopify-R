@@ -9,7 +9,7 @@ import {
   countSegment,
   recordEvent,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Marketing campaign actions (Phase 5). storeId resolves server-side; sending fans the
@@ -29,7 +29,7 @@ export async function createCampaignAction(input: {
   subject: string;
   body: string;
 }): Promise<CampaignSaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("marketing");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   if (!input.name.trim()) return { ok: false, error: "Name your campaign." };
   if (!input.body.trim()) return { ok: false, error: "Write a message." };
@@ -56,7 +56,7 @@ export async function createCampaignAction(input: {
 export async function sendCampaignAction(
   id: string,
 ): Promise<{ ok: boolean; sentCount?: number; recipientCount?: number; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("marketing");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const res = await sendCampaign(storeId, id);
   if (res.ok) {
@@ -75,7 +75,7 @@ export async function sendCampaignAction(
 }
 
 export async function deleteCampaignAction(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("marketing");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteCampaign(storeId, id);
   revalidatePath("/marketing");
@@ -84,6 +84,6 @@ export async function deleteCampaignAction(id: string): Promise<{ ok: boolean }>
 
 /** Live recipient count for a segment (admin preview before sending). */
 export async function previewSegmentCount(segment: Segment): Promise<number> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("marketing");
   return countSegment(storeId, segment);
 }

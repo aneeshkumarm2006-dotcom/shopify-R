@@ -8,7 +8,7 @@ import {
   recordEvent,
   type DiscountInput,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Server actions backing the discounts admin (PRD §6.4 — promo codes). Each
@@ -31,7 +31,7 @@ function revalidateDiscounts() {
 export async function createDiscountAction(
   input: DiscountInput,
 ): Promise<DiscountSaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("discounts");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const created = await createDiscount(storeId, input);
@@ -55,7 +55,7 @@ export async function updateDiscountAction(
   id: string,
   input: DiscountInput,
 ): Promise<DiscountSaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("discounts");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const updated = await updateDiscount(storeId, id, input);
@@ -77,7 +77,7 @@ export async function updateDiscountAction(
 }
 
 export async function deleteDiscountAction(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("discounts");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteDiscount(storeId, id);
   if (ok) {

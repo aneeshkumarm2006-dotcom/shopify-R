@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { InventoryReason } from "@/types";
 import { adjustInventory, recordEvent } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Inventory adjustment action (Stage 9, PRD §6.5). Applies a manual stock change
@@ -18,7 +18,7 @@ export async function adjustStock(input: {
   amount: number;
   reason: InventoryReason;
 }): Promise<{ ok: boolean; resultingQuantity?: number }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const res = await adjustInventory(storeId, input);
   if (!res) return { ok: false };

@@ -24,6 +24,19 @@ export async function hashPassword(password: string): Promise<string> {
   return `${SCHEME}$${salt.toString("hex")}$${key.toString("hex")}`;
 }
 
+/**
+ * Always-false verification against a real, process-stable decoy hash. Call this on the
+ * "account not found / no password" branch of a login so it spends the SAME scrypt time
+ * as a real verification — closing the timing oracle that would otherwise let an
+ * attacker distinguish registered from unregistered emails despite a generic message.
+ */
+let decoyHashPromise: Promise<string> | null = null;
+export async function dummyVerify(password: string): Promise<false> {
+  if (!decoyHashPromise) decoyHashPromise = hashPassword(randomBytes(24).toString("hex"));
+  await verifyPassword(password, await decoyHashPromise);
+  return false;
+}
+
 /** Verify a plaintext password against a stored hash. Never throws — returns false. */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   try {

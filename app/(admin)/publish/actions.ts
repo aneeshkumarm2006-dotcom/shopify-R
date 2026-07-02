@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { StoreStatus } from "@/types";
 import { publishStore, unpublishStore, scheduleStorePublish, PublishError, recordEvent } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Publish / unpublish actions (Stage 11, PRD §6.10). The `storeId` is resolved from
@@ -26,7 +26,7 @@ function revalidateStatusSurfaces() {
 }
 
 export async function publishStoreAction(): Promise<PublishResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("publish");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const store = await publishStore(storeId);
@@ -49,7 +49,7 @@ export async function publishStoreAction(): Promise<PublishResult> {
  * or null to cancel. The actual publish happens via the scheduled-publish cron.
  */
 export async function scheduleStorePublishAction(at: string | null): Promise<PublishResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("publish");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const store = await scheduleStorePublish(storeId, at);
@@ -69,7 +69,7 @@ export async function scheduleStorePublishAction(at: string | null): Promise<Pub
 }
 
 export async function unpublishStoreAction(): Promise<PublishResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("publish");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const store = await unpublishStore(storeId);

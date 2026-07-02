@@ -28,6 +28,23 @@ import { getCurrentCustomer } from "@/lib/customer/session";
 /** Age-gate cookie set by the storefront age gate (Stage 8). */
 const AGE_COOKIE = "offshelf_age_verified";
 
+/**
+ * IP-keyed throttle for the unauthenticated storefront commerce endpoints. Guards
+ * order-spam (checkout) and code-guessing oracles (discount / gift-card preview both
+ * reveal whether a code exists). Fails closed so a DB blip can't disable it.
+ */
+async function allowStorefront(keyPrefix: string, limit: number, windowSeconds: number): Promise<boolean> {
+  const { checkRateLimit } = await import("@/lib/rate-limit");
+  const { getClientIp } = await import("@/lib/request-meta");
+  const { allowed } = await checkRateLimit({
+    key: `${keyPrefix}:${await getClientIp()}`,
+    limit,
+    windowSeconds,
+    failClosed: true,
+  });
+  return allowed;
+}
+
 interface SubmitOrderInput {
   email: string;
   firstName: string;
@@ -59,6 +76,9 @@ export interface SubmitOrderResult {
 export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderResult> {
   const store = await resolveStorefront();
   if (!store) return { ok: false, error: "This store isn't available right now." };
+  if (!(await allowStorefront(`checkout:${store._id}`, 15, 600))) {
+    return { ok: false, error: "Too many attempts. Please wait a moment and try again." };
+  }
 
   const name = `${input.firstName} ${input.lastName}`.trim();
   // MVP collects a single address; contact + shipping share it.
@@ -119,6 +139,10 @@ export async function applyDiscount(
   const store = await resolveStorefront();
   if (!store) return { ok: false, reason: "not_found" };
   if (!code.trim()) return { ok: false, reason: "not_found" };
+  // Tight limit: this is a code-existence oracle — throttle guessing/enumeration.
+  if (!(await allowStorefront(`codeprobe:${store._id}`, 20, 60))) {
+    return { ok: false, reason: "rate_limited" };
+  }
 
   const result = await validateDiscount(store._id, code, subtotal);
   if (result.ok) return { ok: true, amount: result.amount, code: result.code };
@@ -137,6 +161,10 @@ export async function previewGiftCard(
 ): Promise<{ ok: boolean; balance?: number; applies?: number; code?: string; reason?: string }> {
   const store = await resolveStorefront();
   if (!store || !code.trim()) return { ok: false, reason: "not_found" };
+  // Tight limit: this is a code-existence + balance oracle — throttle guessing.
+  if (!(await allowStorefront(`codeprobe:${store._id}`, 20, 60))) {
+    return { ok: false, reason: "rate_limited" };
+  }
 
   const result = await validateGiftCard(store._id, code);
   if (!result.ok) return { ok: false, reason: result.reason };

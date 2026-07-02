@@ -57,6 +57,21 @@ import {
  * targeted Edge Config key read — no MongoDB. The actual store lookup + live/draft/
  * suspended gating happen in the Node-runtime `(store)` server components.
  */
+/**
+ * Fall-through response that STRIPS the trusted tenant headers from the forwarded
+ * request. `x-store-subdomain` / `x-store-base-path` are authoritative — set ONLY by
+ * this middleware on its rewrite branches. A client must never be able to supply them:
+ * on any pass-through we drop inbound copies so a crafted request can't spoof a store
+ * (`resolveStorefront` reads these server-side). Rewrite branches build fresh headers
+ * and `.set()` both values, so they already override any inbound copy.
+ */
+function passThrough(req: NextRequest): NextResponse {
+  const headers = new Headers(req.headers);
+  headers.delete(STORE_SUBDOMAIN_HEADER);
+  headers.delete(STORE_BASE_PATH_HEADER);
+  return NextResponse.next({ request: { headers } });
+}
+
 export function middleware(req: NextRequest): NextResponse | Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
@@ -67,7 +82,7 @@ export function middleware(req: NextRequest): NextResponse | Promise<NextRespons
 
     // No / invalid / reserved subdomain → let it fall through (and 404 normally).
     if (!sub || RESERVED_SUBDOMAINS.includes(sub) || !isDnsSafeSubdomain(sub)) {
-      return NextResponse.next();
+      return passThrough(req);
     }
 
     const rest = segments.slice(2).join("/"); // "products/x", "cart", or ""
@@ -121,7 +136,7 @@ function resolveCustomDomainRequest(req: NextRequest): NextResponse | Promise<Ne
   // Short-circuit: skip the Edge Config round-trip entirely for hosts that can never
   // be a custom domain. This covers the overwhelming majority of non-`/s/` traffic.
   if (!hostname || isKnownPlatformHost(hostname)) {
-    return NextResponse.next();
+    return passThrough(req);
   }
 
   return resolveViaEdgeConfig(hostname, req);
@@ -142,11 +157,11 @@ async function resolveViaEdgeConfig(hostname: string, req: NextRequest): Promise
     // Soft failure: a missing/misconfigured/slow Edge Config must never 500 the
     // request or block traffic on hosts that aren't custom domains.
     console.error("[middleware] Edge Config lookup failed (falling through)", { hostname, err });
-    return NextResponse.next();
+    return passThrough(req);
   }
 
   if (!subdomain || RESERVED_SUBDOMAINS.includes(subdomain) || !isDnsSafeSubdomain(subdomain)) {
-    return NextResponse.next();
+    return passThrough(req);
   }
 
   // This IS a verified custom domain. It may serve the STOREFRONT ONLY — redirect any

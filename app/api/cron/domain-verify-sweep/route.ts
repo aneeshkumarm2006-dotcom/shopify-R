@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "@/lib/cron-auth";
 import { listPendingDomainsForSweep, updateDomainVerification, getStore } from "@/lib/data";
 import { getProjectDomain, getProjectDomainConfig } from "@/lib/vercel/domains";
 import { syncVerifiedDomainToEdgeConfig } from "@/lib/vercel/edge-config";
@@ -21,13 +22,8 @@ const TIMEOUT_DAYS = 7;
 const TIMEOUT_MS = TIMEOUT_DAYS * 24 * 60 * 60 * 1000;
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ ok: false, error: "cron disabled (no CRON_SECRET)" }, { status: 503 });
-  }
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+  const denied = checkCronAuth(req);
+  if (denied) return NextResponse.json({ ok: false, error: denied.error }, { status: denied.status });
 
   try {
     const result = await runDomainVerifySweep();

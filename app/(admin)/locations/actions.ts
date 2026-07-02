@@ -9,7 +9,7 @@ import {
   setInventoryLevel,
   recordEvent,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Locations + per-location stock actions (Phase 6). storeId resolves server-side. Stock
@@ -22,7 +22,7 @@ function revalidate() {
 }
 
 export async function createLocationAction(name: string): Promise<{ ok: boolean; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const loc = await createLocation(storeId, name);
   if (!loc) return { ok: false, error: "Couldn't create the location." };
@@ -37,7 +37,7 @@ export async function createLocationAction(name: string): Promise<{ ok: boolean;
 }
 
 export async function renameLocationAction(id: string, name: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = Boolean(await renameLocation(storeId, id, name));
   if (ok) revalidate();
@@ -45,7 +45,7 @@ export async function renameLocationAction(id: string, name: string): Promise<{ 
 }
 
 export async function setDefaultLocationAction(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await setDefaultLocation(storeId, id);
   if (ok) revalidate();
@@ -53,7 +53,7 @@ export async function setDefaultLocationAction(id: string): Promise<{ ok: boolea
 }
 
 export async function deleteLocationAction(id: string): Promise<{ ok: boolean; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const res = await deleteLocation(storeId, id);
   if (res.ok) {
@@ -70,7 +70,7 @@ export async function setInventoryLevelAction(input: {
   locationId: string;
   quantity: number;
 }): Promise<{ ok: boolean; total?: number }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const total = await setInventoryLevel(storeId, input);
   if (total === null) return { ok: false };

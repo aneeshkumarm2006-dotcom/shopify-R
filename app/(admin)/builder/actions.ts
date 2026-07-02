@@ -9,7 +9,7 @@ import {
   type ThemeConfigInput,
 } from "@/lib/data";
 import type { ThemeVersion } from "@/types";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Builder persistence action (Stage 11, PRD §6.2). Both the autosave debounce and
@@ -26,7 +26,7 @@ export async function saveThemeConfigAction(
   /** When true (explicit "Save"), snapshot the prior config into version history. */
   snapshot = false,
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("content");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const saved = await saveThemeConfig(storeId, input, { snapshot });
   if (!saved) return { ok: false };
@@ -37,7 +37,7 @@ export async function saveThemeConfigAction(
 
 /** List the store's saved theme versions (Phase 6 history panel). */
 export async function listThemeVersionsAction(): Promise<ThemeVersion[]> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("content");
   return listThemeVersions(storeId);
 }
 
@@ -45,7 +45,7 @@ export async function listThemeVersionsAction(): Promise<ThemeVersion[]> {
 export async function restoreThemeVersionAction(
   versionId: string,
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("content");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const restored = await restoreThemeVersion(storeId, versionId);
   if (!restored) return { ok: false };

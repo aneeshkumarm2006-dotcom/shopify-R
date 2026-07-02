@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { setCustomerTags, recordEvent } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Customer admin actions (Phase 5). Currently: segmentation tags. storeId resolves
@@ -12,7 +12,7 @@ export async function updateCustomerTags(
   id: string,
   tags: string[],
 ): Promise<{ ok: boolean; tags?: string[]; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("customers");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const updated = await setCustomerTags(storeId, id, tags);
   if (!updated) return { ok: false, error: "Couldn't update tags." };

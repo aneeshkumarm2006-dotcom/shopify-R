@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { SubscriptionPlan } from "@/types";
 import { updateStore, setSubscriptionPlan, recordEvent, type StoreUpdate } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Settings save action (Stage 9). Persists store details, the Cloudinary brand
@@ -13,7 +13,7 @@ import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "
 export async function saveStoreSettings(
   update: StoreUpdate,
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const saved = await updateStore(storeId, update);
   if (!saved) return { ok: false };
@@ -48,7 +48,7 @@ export async function saveStoreSettings(
  */
 export async function setPlanAction(plan: SubscriptionPlan): Promise<{ ok: boolean }> {
   if (plan !== "free" && plan !== "standard") return { ok: false };
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const updated = await setSubscriptionPlan(storeId, plan);
   if (!updated) return { ok: false };

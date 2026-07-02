@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { dbConnect, StoreModel, UserModel, SubscriptionModel, ThemeConfigModel } from "@/lib/db";
 import { emptyBillingSeam } from "@/lib/payments/billing";
 import { recordEvent } from "@/lib/data";
-import { hashPassword, verifyPassword } from "./password";
+import { hashPassword, verifyPassword, dummyVerify } from "./password";
 
 /** Thrown by `provisionMerchantWithPassword` when the email already has an account. */
 export class EmailTakenError extends Error {
@@ -271,7 +271,10 @@ export async function authenticateCredentials(
 ): Promise<CredentialIdentity | null> {
   await dbConnect();
   const user = await UserModel.findOne({ email: email.toLowerCase() }).lean<UserLean | null>();
-  if (!user?.passwordHash || !user.activeStoreId) return null;
+  if (!user?.passwordHash || !user.activeStoreId) {
+    await dummyVerify(password); // equalize timing so absent accounts aren't distinguishable
+    return null;
+  }
 
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) return null;

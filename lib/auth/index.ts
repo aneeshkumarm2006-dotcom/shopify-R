@@ -65,6 +65,19 @@ export function isAuthConfigured(): boolean {
   return Boolean(NEXTAUTH_SECRET && (googleConfigured || credentialsConfigured));
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+/**
+ * The Part A "mock/stub" fallback (open guards, demo `MOCK_STORE_ID`) is a DEV-ONLY
+ * convenience. In production a missing auth configuration must FAIL CLOSED: every guard
+ * then falls through to the real, session-checked path (which denies / redirects to
+ * sign-in) instead of granting anonymous access to the admin + cross-tenant platform
+ * portal. This is the single switch that decides "are we allowed to skip real auth".
+ */
+export function isStubMode(): boolean {
+  return !isAuthConfigured() && !IS_PRODUCTION;
+}
+
 const providers = [
   ...(googleConfigured
     ? [Google({ clientId: GOOGLE_CLIENT_ID!, clientSecret: GOOGLE_CLIENT_SECRET! })]
@@ -110,7 +123,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   secret: NEXTAUTH_SECRET,
   trustHost: true,
-  session: { strategy: "jwt" },
+  // Shorten the stateless-JWT lifetime from NextAuth's 30-day default: a demoted/revoked
+  // user (or a stolen token) should lose access in hours, not weeks. The platform-admin
+  // guard additionally re-checks the DB per request (see requirePlatformAdmin).
+  session: { strategy: "jwt", maxAge: 24 * 60 * 60, updateAge: 60 * 60 },
   pages: { signIn: "/sign-in" },
   callbacks: {
     /**
@@ -176,8 +192,8 @@ export interface MerchantContext {
  * Returns `null` when there is no usable session (anonymous).
  */
 export async function getMerchantContext(): Promise<MerchantContext | null> {
-  if (!isAuthConfigured()) {
-    return { storeId: MOCK_STORE_ID, ready: true }; // Part A / mock fallback
+  if (isStubMode()) {
+    return { storeId: MOCK_STORE_ID, ready: true }; // dev stub fallback (never in production)
   }
   let session: Session | null;
   try {
@@ -234,7 +250,7 @@ export async function assertNotImpersonating(): Promise<void> {
  * Null when there's no usable session.
  */
 export async function getCurrentStoreRole(): Promise<StoreRole | null> {
-  if (!isAuthConfigured()) return "owner";
+  if (isStubMode()) return "owner";
   const ctx = await getMerchantContext();
   if (!ctx) return null;
   if (ctx.impersonating) return "owner";
@@ -256,7 +272,7 @@ export async function getCurrentStoreRole(): Promise<StoreRole | null> {
  */
 export async function requirePermission(permission: Permission): Promise<string> {
   const storeId = await requireMerchantStoreId();
-  if (!isAuthConfigured()) return storeId; // stub mode: full access
+  if (isStubMode()) return storeId; // dev stub only: full access
   const role = await getCurrentStoreRole();
   if (!roleHasPermission(role, permission)) throw new PermissionError(permission);
   return storeId;
@@ -269,7 +285,7 @@ export async function requirePermission(permission: Permission): Promise<string>
  * `/onboarding` themselves, which would loop.
  */
 export async function requireMerchantStoreId(): Promise<string> {
-  if (!isAuthConfigured()) return MOCK_STORE_ID;
+  if (isStubMode()) return MOCK_STORE_ID;
 
   // Pure operators (platform_admin) live in the separate /platform portal and have no
   // merchant store UI — EXCEPT while actively impersonating a store (read-only view).
@@ -301,7 +317,7 @@ export async function requireMerchantStoreId(): Promise<string> {
  * when anonymous / stub mode. Never throws — observability must not break callers.
  */
 export async function getActorUserId(): Promise<string | null> {
-  if (!isAuthConfigured()) return null;
+  if (isStubMode()) return null;
   try {
     const session = await auth();
     return session?.user?.id ?? null;
@@ -311,7 +327,7 @@ export async function getActorUserId(): Promise<string | null> {
 }
 
 export async function requireSession(): Promise<void> {
-  if (!isAuthConfigured()) return;
+  if (isStubMode()) return;
   let session: Session | null;
   try {
     session = await auth();
@@ -330,7 +346,7 @@ export async function requireSession(): Promise<void> {
  * (no auth configured) it allows through so Part A demos keep working.
  */
 export async function requirePlatformAdmin(): Promise<void> {
-  if (!isAuthConfigured()) return;
+  if (isStubMode()) return;
   let session: Session | null;
   try {
     session = await auth();
@@ -339,4 +355,13 @@ export async function requirePlatformAdmin(): Promise<void> {
   }
   if (!session?.user?.id) redirect("/sign-in");
   if (session.user.role !== "platform_admin") notFound();
+
+  // The role is stamped into the JWT at sign-in and rides it for the token's lifetime.
+  // For the cross-tenant platform portal that lag is unacceptable: a revoked/demoted
+  // operator must lose access immediately, not whenever the token expires. Re-read the
+  // authoritative role from the DB and deny if it no longer says platform_admin. (Only
+  // the platform surface pays this per-request read; ordinary merchant traffic doesn't.)
+  const { getUserById } = await import("@/lib/data/account");
+  const fresh = await getUserById(session.user.id);
+  if (!fresh || fresh.role !== "platform_admin") notFound();
 }

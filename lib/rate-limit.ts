@@ -27,8 +27,14 @@ export async function checkRateLimit(opts: {
   key: string;         // e.g. "domain-add:store_abc"
   limit: number;       // max requests in the window
   windowSeconds: number; // e.g. 3600 for 1 hour
+  /**
+   * Security-sensitive limits (login, code-guessing oracles) should FAIL CLOSED: if the
+   * counter store is unreachable, deny rather than let an attacker bypass throttling by
+   * inducing DB pressure. Defaults to false (fail open) for soft infra-quota limits.
+   */
+  failClosed?: boolean;
 }): Promise<{ allowed: boolean; remaining: number }> {
-  const { key, limit, windowSeconds } = opts;
+  const { key, limit, windowSeconds, failClosed = false } = opts;
 
   const windowStart = Math.floor(Date.now() / (windowSeconds * 1000));
   const docId = `${key}:${windowStart}`;
@@ -60,10 +66,14 @@ export async function checkRateLimit(opts: {
     }
     return { allowed: true, remaining: Math.max(0, limit - count) };
   } catch (err) {
-    // Log the infrastructure fault but fail open so a transient DB blip does
-    // not block legitimate requests.  The caller receives `remaining: -1` as a
-    // sentinel indicating the count is unknown.
-    console.error("[rate-limit] counter update failed — failing open", { key, err });
-    return { allowed: true, remaining: -1 };
+    // Infrastructure fault. Security-sensitive callers (`failClosed`) deny so throttling
+    // can't be bypassed by inducing DB pressure; soft infra-quota limits fail open so a
+    // transient DB blip doesn't block legitimate requests. `remaining: -1` flags the
+    // degraded state either way.
+    console.error(
+      `[rate-limit] counter update failed — failing ${failClosed ? "closed" : "open"}`,
+      { key, err },
+    );
+    return { allowed: !failClosed, remaining: -1 };
   }
 }

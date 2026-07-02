@@ -8,7 +8,7 @@ import {
   recordEvent,
   type CollectionInput,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Server actions for the collections admin (Stage 9, PRD §5.5 — manual grouping,
@@ -33,7 +33,7 @@ export async function saveCollection(
   id: string | null,
   input: CollectionInput,
 ): Promise<CollectionSaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   if (!input.title.trim()) return { ok: false, error: "Add a collection title." };
   if (!input.handle.trim()) return { ok: false, error: "Add a handle." };
@@ -68,7 +68,7 @@ export async function saveCollection(
 }
 
 export async function removeCollection(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteCollection(storeId, id);
   if (ok) {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { FulfillmentStatus, PaymentStatus } from "@/types";
 import { updateOrderStatus, createFulfillment, addOrderNote, FulfillmentError, recordEvent } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Order management actions (Stage 10, PRD §6.7). Manual payment/fulfillment status
@@ -15,7 +15,7 @@ export async function setOrderStatus(
   id: string,
   patch: { paymentStatus?: PaymentStatus; fulfillmentStatus?: FulfillmentStatus },
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("orders");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const actorId = await getActorUserId();
   const updated = await updateOrderStatus(storeId, id, patch, actorId);
@@ -54,7 +54,7 @@ export async function fulfillOrder(
     trackingUrl?: string;
   },
 ): Promise<FulfillResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("orders");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     const updated = await createFulfillment(storeId, id, { ...input, actorId: await getActorUserId() });
@@ -80,7 +80,7 @@ export async function addOrderNoteAction(
   id: string,
   body: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("orders");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   if (!body.trim()) return { ok: false, error: "Write a note first." };
   const updated = await addOrderNote(storeId, id, body, await getActorUserId());

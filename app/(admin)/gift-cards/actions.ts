@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createGiftCard, setGiftCardStatus, getStore, recordEvent } from "@/lib/data";
 import type { GiftCardStatus } from "@/types";
 import { storeCurrency } from "@/lib/format";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Gift-card admin actions (Phase 4). storeId resolves server-side (tenant isolation);
@@ -24,7 +24,7 @@ export async function issueGiftCard(input: {
   code?: string;
   expiresAt?: string | null;
 }): Promise<IssueResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("discounts");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
 
   const amount = Math.round(Number(input.amount) * 100) / 100;
@@ -60,7 +60,7 @@ export async function toggleGiftCardStatus(
   id: string,
   status: GiftCardStatus,
 ): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("discounts");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const updated = await setGiftCardStatus(storeId, id, status);
   if (updated) {

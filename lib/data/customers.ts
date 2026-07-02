@@ -2,7 +2,7 @@ import type { Address, Customer, PublicCustomer } from "@/types";
 import { mockCustomers } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, Customers } from "@/lib/db";
-import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { hashPassword, verifyPassword, dummyVerify } from "@/lib/auth/password";
 import { normalizeTag } from "./segments";
 
 /** Strip the password hash so a customer record is safe to hand a client component. */
@@ -177,7 +177,10 @@ export async function authenticateCustomer(
 ): Promise<Customer | null> {
   if (!isDbConfigured()) return null;
   const customer = await Customers.findOne(storeId, { email: email.trim().toLowerCase() });
-  if (!customer?.passwordHash) return null;
+  if (!customer?.passwordHash) {
+    await dummyVerify(password); // equalize timing so absent accounts aren't distinguishable
+    return null;
+  }
   const ok = await verifyPassword(password, customer.passwordHash);
   return ok ? customer : null;
 }

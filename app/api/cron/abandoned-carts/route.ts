@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "@/lib/cron-auth";
 import { runAbandonedCartRecovery } from "@/lib/data";
 
 /**
@@ -14,13 +15,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ ok: false, error: "cron disabled (no CRON_SECRET)" }, { status: 503 });
-  }
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+  const denied = checkCronAuth(req);
+  if (denied) return NextResponse.json({ ok: false, error: denied.error }, { status: denied.status });
 
   const url = new URL(req.url);
   const hours = clamp(Number(url.searchParams.get("hours")) || 24, 1, 720);

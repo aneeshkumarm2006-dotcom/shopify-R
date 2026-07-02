@@ -19,7 +19,7 @@ import {
   type ProductInput,
   type BulkProductEdit,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
  * Server actions backing the products admin (Stage 9, PRD §6.4). Each resolves
@@ -52,7 +52,7 @@ export async function saveProduct(
   input: ProductInput,
   collectionIds: string[] = [],
 ): Promise<SaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   try {
     let productId = id;
@@ -87,7 +87,7 @@ export async function saveProduct(
 }
 
 export async function removeProduct(id: string): Promise<{ ok: boolean }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false }; }
   const ok = await deleteProduct(storeId, id);
   if (ok) {
@@ -103,7 +103,7 @@ export async function removeProduct(id: string): Promise<{ ok: boolean }> {
 }
 
 export async function duplicateProductAction(id: string): Promise<SaveResult> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, error: "Read-only: exit impersonation to make changes." }; }
   const copy = await duplicateProduct(storeId, id);
   if (!copy) return { ok: false, error: "Product not found." };
@@ -121,7 +121,7 @@ export async function bulkSetStatusAction(
   ids: string[],
   status: ProductStatus,
 ): Promise<{ ok: boolean; count: number }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, count: 0 }; }
   const count = await setProductsStatus(storeId, ids, status);
   await recordEvent({
@@ -138,7 +138,7 @@ export async function bulkEditAction(
   ids: string[],
   edit: BulkProductEdit,
 ): Promise<{ ok: boolean; count: number; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, count: 0, error: "Read-only: exit impersonation to make changes." }; }
   const count = await bulkEditProducts(storeId, ids, edit);
   await recordEvent({
@@ -153,7 +153,7 @@ export async function bulkEditAction(
 
 /** Export all of the store's products as a CSV string (the client triggers download). */
 export async function exportProductsCsv(): Promise<{ ok: boolean; csv?: string; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   const products = await getProducts(storeId);
   return { ok: true, csv: productsToCsv(products) };
 }
@@ -162,7 +162,7 @@ export async function exportProductsCsv(): Promise<{ ok: boolean; csv?: string; 
 export async function importProductsAction(
   csv: string,
 ): Promise<{ ok: boolean; created: number; updated: number; errors: string[] }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, created: 0, updated: 0, errors: ["Read-only: exit impersonation to make changes."] }; }
 
   const parsed = parseProductCsv(csv);
@@ -186,7 +186,7 @@ export async function importProductsAction(
 }
 
 export async function bulkDeleteAction(ids: string[]): Promise<{ ok: boolean; count: number }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("products");
   try { await assertNotImpersonating(); } catch { return { ok: false, count: 0 }; }
   const count = await deleteProducts(storeId, ids);
   await recordEvent({

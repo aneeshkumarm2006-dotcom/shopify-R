@@ -12,7 +12,7 @@ import {
   recordEvent,
   DomainError,
 } from "@/lib/data";
-import { requireMerchantStoreId, assertNotImpersonating, getActorUserId } from "@/lib/auth";
+import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 import { isDbConfigured } from "@/lib/db";
 import { APP_DOMAIN } from "@/lib/tenant/host";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -113,7 +113,7 @@ function friendlyVercelError(err: unknown): string {
 export async function addDomainAction(
   input: { domain: string },
 ): Promise<{ ok: true; domain: CustomDomain } | { ok: false; error: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try {
     await assertNotImpersonating();
   } catch {
@@ -219,7 +219,7 @@ export async function addDomainAction(
 }
 
 export async function removeDomainAction(domainId: string): Promise<{ ok: boolean; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try {
     await assertNotImpersonating();
   } catch {
@@ -270,7 +270,7 @@ export async function removeDomainAction(domainId: string): Promise<{ ok: boolea
 }
 
 export async function setPrimaryDomainAction(domainId: string): Promise<{ ok: boolean; error?: string }> {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
   try {
     await assertNotImpersonating();
   } catch {
@@ -303,7 +303,7 @@ export async function refreshDomainStatusAction(
   | { ok: true; domain: CustomDomain; routingError?: string }
   | { ok: false; error: string }
 > {
-  const storeId = await requireMerchantStoreId();
+  const storeId = await requirePermission("settings");
 
   const existing = await getDomainById(storeId, domainId);
   if (!existing) return { ok: false, error: "Domain not found." };

@@ -30,6 +30,23 @@ import {
  * visiting (PRD §9). Sessions live in the separate signed customer cookie.
  */
 
+/**
+ * IP-keyed throttle for the unauthenticated storefront auth endpoints (login/register).
+ * Fails closed so a DB blip can't disable brute-force protection. `keyPrefix` already
+ * scopes to the store; we append the client IP.
+ */
+async function allowStorefrontAuth(keyPrefix: string, limit: number, windowSeconds: number): Promise<boolean> {
+  const { checkRateLimit } = await import("@/lib/rate-limit");
+  const { getClientIp } = await import("@/lib/request-meta");
+  const { allowed } = await checkRateLimit({
+    key: `${keyPrefix}:${await getClientIp()}`,
+    limit,
+    windowSeconds,
+    failClosed: true,
+  });
+  return allowed;
+}
+
 /** A cart line rebuilt from the catalog (authoritative price/title) for the client. */
 export interface AccountCartLine {
   productId: string;
@@ -95,6 +112,9 @@ export async function registerAccount(input: {
 }): Promise<AccountAuthResult> {
   const store = await resolveStorefront();
   if (!store) return { ok: false, error: "This store isn't available right now." };
+  if (!(await allowStorefrontAuth(`creg:${store._id}`, 10, 3600))) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
   try {
     const customer = await registerCustomer(store._id, {
       name: input.name,
@@ -124,6 +144,9 @@ export async function loginAccount(input: {
 }): Promise<AccountAuthResult> {
   const store = await resolveStorefront();
   if (!store) return { ok: false, error: "This store isn't available right now." };
+  if (!(await allowStorefrontAuth(`clogin:${store._id}`, 20, 900))) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
   const customer = await authenticateCustomer(store._id, input.email, input.password);
   if (!customer) return { ok: false, error: "Incorrect email or password." };
   await setCustomerSession(customer._id, store._id);

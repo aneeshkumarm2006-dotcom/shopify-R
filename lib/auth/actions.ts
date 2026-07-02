@@ -26,7 +26,7 @@ import {
 } from "@/lib/data/store-templates";
 import { saveThemeConfig } from "@/lib/data/theme";
 import { recordEvent } from "@/lib/data";
-import { auth, signIn, signOut, isAuthConfigured, getMerchantContext, getActorUserId, assertNotImpersonating } from "./index";
+import { auth, signIn, signOut, isStubMode, getMerchantContext, getActorUserId, assertNotImpersonating } from "./index";
 
 /**
  * Server actions backing the auth UI (sign-in, onboarding, sign-out). Each one
@@ -37,7 +37,7 @@ import { auth, signIn, signOut, isAuthConfigured, getMerchantContext, getActorUs
 
 /** Sign-in button → start Google OAuth, or (stub) go straight to onboarding. */
 export async function signInGoogle(): Promise<void> {
-  if (!isAuthConfigured()) {
+  if (isStubMode()) {
     const { redirect } = await import("next/navigation");
     redirect("/onboarding");
   }
@@ -66,12 +66,27 @@ export async function signInCredentials(
   const password = String(formData.get("password") ?? "");
   if (!email || !password) return { error: "Enter your email and password." };
 
-  if (!isAuthConfigured()) {
+  if (isStubMode()) {
     const { redirect } = await import("next/navigation");
     redirect("/onboarding"); // Part A demo flow
   }
   if (!isDbConfigured()) {
     return { error: "Email sign-in isn’t available — use Continue with Google." };
+  }
+
+  // Throttle credential stuffing / brute force — per IP and per target email. Fail
+  // closed: a DB blip must not silently disable the limiter on the auth path.
+  {
+    const { checkRateLimit } = await import("@/lib/rate-limit");
+    const { getClientIp, keyHash } = await import("@/lib/request-meta");
+    const ip = await getClientIp();
+    const [byIp, byEmail] = await Promise.all([
+      checkRateLimit({ key: `login:ip:${ip}`, limit: 20, windowSeconds: 900, failClosed: true }),
+      checkRateLimit({ key: `login:em:${keyHash(email)}`, limit: 8, windowSeconds: 900, failClosed: true }),
+    ]);
+    if (!byIp.allowed || !byEmail.allowed) {
+      return { error: "Too many attempts. Please wait a few minutes and try again." };
+    }
   }
 
   try {
@@ -97,12 +112,25 @@ export async function signUpCredentials(
   if (!EMAIL_RE.test(email)) return { error: "Enter a valid email address." };
   if (password.length < 8) return { error: "Use a password of at least 8 characters." };
 
-  if (!isAuthConfigured()) {
+  if (isStubMode()) {
     const { redirect } = await import("next/navigation");
     redirect("/onboarding"); // Part A demo flow
   }
   if (!isDbConfigured()) {
     return { error: "Account creation isn’t available — use Continue with Google." };
+  }
+
+  // Throttle automated signup (account-spam + email enumeration) per IP.
+  {
+    const { checkRateLimit } = await import("@/lib/rate-limit");
+    const { getClientIp } = await import("@/lib/request-meta");
+    const { allowed } = await checkRateLimit({
+      key: `signup:ip:${await getClientIp()}`,
+      limit: 10,
+      windowSeconds: 3600,
+      failClosed: true,
+    });
+    if (!allowed) return { error: "Too many attempts. Please wait a while and try again." };
   }
 
   try {
@@ -136,7 +164,7 @@ export async function signUpCredentials(
 
 /** Account menu → end the session (or, stubbed, just return to sign-in). */
 export async function doSignOut(): Promise<void> {
-  if (!isAuthConfigured()) {
+  if (isStubMode()) {
     const { redirect } = await import("next/navigation");
     redirect("/sign-in");
   }
@@ -193,7 +221,7 @@ export async function claimSubdomain(
   if (!isDnsSafeSubdomain(value)) return { ok: false, reason: "invalid" };
   if (RESERVED_SUBDOMAINS.includes(value)) return { ok: false, reason: "reserved" };
 
-  if (!isAuthConfigured()) return { ok: true }; // Part A: nothing to persist
+  if (isStubMode()) return { ok: true }; // Part A: nothing to persist
 
   // Claim onto the merchant's ACTIVE store (ownership-verified by getMerchantContext) —
   // for a multi-store user mid-onboarding, that's the store they just created.
@@ -256,7 +284,7 @@ export async function claimSubdomain(
  * store. Stub mode (no auth) has a single demo store, so it's a no-op success.
  */
 export async function setActiveStore(storeId: string): Promise<{ ok: boolean }> {
-  if (!isAuthConfigured()) return { ok: true };
+  if (isStubMode()) return { ok: true };
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false };
@@ -280,7 +308,7 @@ export type CreateStoreResult =
  * active and the caller routes to `/onboarding` to claim its address.
  */
 export async function createStore(): Promise<CreateStoreResult> {
-  if (!isAuthConfigured()) return { ok: false, reason: "unauthenticated" };
+  if (isStubMode()) return { ok: false, reason: "unauthenticated" };
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false, reason: "unauthenticated" };
