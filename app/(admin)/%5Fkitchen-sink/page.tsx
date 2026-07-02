@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { getCustomers, getOrders, getProducts } from "@/lib/data";
 import { MOCK_STORE_ID } from "@/lib/data/mocks";
 import { KitchenSink } from "@/components/dev/kitchen-sink";
@@ -13,6 +14,9 @@ export const metadata: Metadata = { title: "Kitchen sink" };
  * source every Part-A screen uses) and hands it to the interactive client gallery.
  */
 export default async function KitchenSinkPage() {
+  // Dev-only design review surface — never expose it on a production deployment.
+  if (process.env.NODE_ENV === "production") notFound();
+
   const [products, orders, customers] = await Promise.all([
     getProducts(MOCK_STORE_ID),
     getOrders(MOCK_STORE_ID),

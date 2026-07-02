@@ -7,10 +7,15 @@
  * Run: node --env-file=.env.local --import tsx scripts/seed-demo-store.ts
  */
 import mongoose from "mongoose";
+import { randomBytes } from "node:crypto";
 
+// Never commit a real/known password: take it from DEMO_PASSWORD, else mint a random
+// one per run and print it (it's a throwaway local demo account, not a committed
+// constant). A known, source-committed password would be a public backdoor if this
+// seed ever ran against a shared/production DB.
 const DEMO = {
-  email: "demo@davnoot.com",
-  password: "OffshelfDemo2026!",
+  email: process.env.DEMO_EMAIL || "demo@davnoot.com",
+  password: process.env.DEMO_PASSWORD || `demo-${randomBytes(9).toString("base64url")}`,
   name: "Davnoot Demo",
   subdomain: "davnoot-demo",
   storeName: "Davnoot Demo Store",
@@ -23,6 +28,12 @@ function loadEnv() {
   }
 }
 loadEnv();
+
+// Refuse to seed a demo account against a production deployment.
+if (process.env.NODE_ENV === "production") {
+  console.error("Refusing to seed the demo store with NODE_ENV=production.");
+  process.exit(1);
+}
 
 const IMG = (id: string) => `https://res.cloudinary.com/demo/image/upload/w_800,h_800,c_fill/${id}.jpg`;
 

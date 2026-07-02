@@ -1,12 +1,13 @@
 import { chromium } from "playwright";
+import { EMAIL, PASSWORD } from "./creds.mjs";
 const BASE="http://localhost:3000";
 const log=(...a)=>console.log("  ",...a);
 const b=await chromium.launch();const ctx=await b.newContext();const page=await ctx.newPage();
 page.on("dialog",d=>d.accept().catch(()=>{}));
 try{
   await page.goto(`${BASE}/sign-in`,{waitUntil:"domcontentloaded"});
-  await page.fill('input[name="email"]',"prem@davnoot.com");
-  await page.fill('input[name="password"]',"PremTees#2026");
+  await page.fill('input[name="email"]',EMAIL);
+  await page.fill('input[name="password"]',PASSWORD);
   await page.getByRole("button",{name:"Sign in",exact:true}).click();
   await page.waitForTimeout(2500);
   await page.goto(`${BASE}/builder`,{waitUntil:"domcontentloaded"});

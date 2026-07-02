@@ -6,6 +6,7 @@ import { readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { PRODUCTS, COLLECTIONS } from "./catalog.mjs";
+import { EMAIL, PASSWORD } from "./creds.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..", "..");
@@ -14,8 +15,6 @@ const SHOTS = join(__dirname, "shots");
 const SHIRTS_DIR = "/private/tmp/claude-501/-Users-premsaikilaru-Davnoot-Shopify-Clone-shopify-R/983b2167-eb03-4f09-a106-43b26e1636af/scratchpad/shirts";
 
 const BASE = "http://localhost:3000";
-const EMAIL = "prem@davnoot.com";
-const PASSWORD = "PremTees#2026";
 const SUBDOMAIN = "prem-tees";
 
 const phase = process.argv[2] || "all";

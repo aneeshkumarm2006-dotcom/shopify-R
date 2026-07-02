@@ -1,7 +1,7 @@
 // Builds the prem-tees HOME page via the real builder UI: hero + featured products + collection list.
 import { chromium } from "playwright";
+import { EMAIL, PASSWORD } from "./creds.mjs";
 const BASE = "http://localhost:3000";
-const EMAIL = "prem@davnoot.com", PASSWORD = "PremTees#2026";
 const log = (...a) => console.log("  ", ...a);
 
 const FEATURED = [

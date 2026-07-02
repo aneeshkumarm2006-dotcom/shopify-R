@@ -9,13 +9,31 @@ import { createHmac, timingSafeEqual } from "crypto";
  */
 
 const TTL_DAYS = 30;
-const SECRET = process.env.NEXTAUTH_SECRET || "offshelf-dev-customer-session-secret";
+
+/**
+ * Resolve the HMAC signing key. In production a missing `NEXTAUTH_SECRET` is a hard
+ * failure (fail closed) — never fall back to a source-committed constant, or anyone
+ * reading the repo could forge a customer session for any store. Outside production
+ * (unit tests / local dev with no env) we allow a deterministic dev key so the token
+ * round-trip stays testable without infrastructure. Mirrors the fail-closed posture
+ * of `lib/auth/impersonation.ts`.
+ */
+function signingSecret(): string {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXTAUTH_SECRET is required to sign/verify customer session tokens (fail closed).",
+    );
+  }
+  return "offshelf-dev-customer-session-secret";
+}
 
 const b64url = (s: string) => Buffer.from(s, "utf8").toString("base64url");
 const unb64url = (s: string) => Buffer.from(s, "base64url").toString("utf8");
 
 function sign(payload: string): string {
-  return createHmac("sha256", SECRET).update(payload).digest("hex");
+  return createHmac("sha256", signingSecret()).update(payload).digest("hex");
 }
 
 /** Mint a signed token binding a customer to a store, valid for `TTL_DAYS`. */
