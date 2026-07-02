@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parseStoreSubdomain,
   isDnsSafeSubdomain,
+  isStorefrontPath,
   RESERVED_SUBDOMAINS,
 } from "../lib/tenant/host";
 
@@ -59,4 +60,64 @@ test("malformed leftmost label is rejected even under the app domain", () => {
 test("host casing is normalized — an uppercase label resolves to its lowercase store", () => {
   // The resolver lowercases the host first, so case never blocks a legitimate store.
   assert.equal(parseStoreSubdomain("ACME.ourapp.com"), "acme");
+});
+
+/**
+ * Storefront-only lockdown (§9). A custom domain / `/s/<sub>` request may serve ONLY
+ * the storefront — the middleware redirects everything else to the shop home so the
+ * platform admin/login never renders under a merchant's branded domain. These pin the
+ * allowlist: customer paths pass, platform/admin/auth paths are blocked, and the
+ * /products & /collections collision (admin list vs storefront handle) is respected.
+ */
+test("isStorefrontPath ALLOWS customer-facing storefront paths", () => {
+  for (const p of [
+    "/",
+    "/preview",
+    "/cart",
+    "/checkout",
+    "/search",
+    "/account",
+    "/order-confirmation",
+    "/products/cool-shirt",
+    "/collections/summer",
+    "/pages/about",
+  ]) {
+    assert.equal(isStorefrontPath(p), true, `${p} should be allowed`);
+  }
+});
+
+test("isStorefrontPath BLOCKS merchant/admin/platform/auth paths on a custom domain", () => {
+  for (const p of [
+    "/sign-in",
+    "/dashboard",
+    "/onboarding",
+    "/orders",
+    "/orders/o1",
+    "/customers",
+    "/settings",
+    "/settings/domains",
+    "/inventory",
+    "/discounts",
+    "/gift-cards",
+    "/marketing",
+    "/reviews",
+    "/analytics",
+    "/staff",
+    "/builder",
+    "/publish",
+    "/locations",
+    "/platform",
+    "/platform/users",
+    "/api/auth/signin",
+    "/api/auth/callback/google",
+    // /products & /collections collisions: bare list + editors are ADMIN.
+    "/products",
+    "/products/new",
+    "/products/edit/p1",
+    "/collections",
+    "/collections/new",
+    "/collections/edit/c1",
+  ]) {
+    assert.equal(isStorefrontPath(p), false, `${p} should be blocked`);
+  }
 });

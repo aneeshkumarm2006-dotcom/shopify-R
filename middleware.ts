@@ -4,6 +4,7 @@ import {
   APP_DOMAIN,
   edgeConfigDomainKey,
   isDnsSafeSubdomain,
+  isStorefrontPath,
   RESERVED_SUBDOMAINS,
   STORE_SUBDOMAIN_HEADER,
   STORE_BASE_PATH_HEADER,
@@ -40,6 +41,14 @@ import {
  * before ever touching Edge Config, so the network call only happens for hosts that
  * could plausibly be a verified custom domain.
  *
+ * STOREFRONT-ONLY LOCKDOWN (§9): once a request is resolved to a store — by custom
+ * domain OR `/s/<sub>` — it may serve the storefront surface ONLY. Any platform path
+ * (merchant `/sign-in`, the `(admin)` dashboard, `/platform`, marketing, NextAuth
+ * `/api/auth`) is redirected to the shop home, so the platform's admin/login can never
+ * render under a merchant's branded domain. Customer login + checkout are unaffected —
+ * they're server actions posting to `/account` / `/checkout`, both allowed by
+ * `isStorefrontPath`. This is why `/api/auth` is included in the matcher below.
+ *
  * Edge Config reads are a soft dependency: wrapped in try/catch, with NextResponse
  * .next() (→ falls through to the marketing/admin app) on any miss, error, or
  * timeout. A slow/erroring Edge Config must never 500 a request or block traffic.
@@ -61,16 +70,25 @@ export function middleware(req: NextRequest): NextResponse | Promise<NextRespons
       return NextResponse.next();
     }
 
+    const rest = segments.slice(2).join("/"); // "products/x", "cart", or ""
+    const targetPath = rest ? `/${rest}` : "/preview";
+
+    // Storefront-only: a `/s/<sub>` URL must never reach the admin/marketing/auth
+    // surface (e.g. `/s/<sub>/dashboard`). Redirect anything that isn't a storefront
+    // path back to that store's home. (Same guarantee the custom-domain branch makes.)
+    if (!isStorefrontPath(targetPath)) {
+      return NextResponse.redirect(new URL(`/s/${sub}`, req.nextUrl));
+    }
+
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set(STORE_SUBDOMAIN_HEADER, sub);
     // Path-routed: storefront links must keep the /s/<sub> prefix so navigation stays
     // on the same host+path. Custom-domain branch sets this to "" instead.
     requestHeaders.set(STORE_BASE_PATH_HEADER, `/s/${sub}`);
 
-    const rest = segments.slice(2).join("/"); // "products/x", "cart", or ""
     const url = req.nextUrl.clone();
     // Bare `/s/<sub>` is the storefront home (the `(store)` group's `/preview` route).
-    url.pathname = rest ? `/${rest}` : "/preview";
+    url.pathname = targetPath;
     return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
   }
 
@@ -131,6 +149,19 @@ async function resolveViaEdgeConfig(hostname: string, req: NextRequest): Promise
     return NextResponse.next();
   }
 
+  // This IS a verified custom domain. It may serve the STOREFRONT ONLY — redirect any
+  // platform surface (merchant `/sign-in`, the `(admin)` dashboard, `/platform`,
+  // marketing, NextAuth `/api/auth`) to the shop home so the platform's admin/login
+  // can never render under the merchant's branded domain. Customer login + checkout
+  // are server actions posting to `/account` / `/checkout` (both allowed), so this
+  // does not touch the customer flow.
+  if (!isStorefrontPath(req.nextUrl.pathname)) {
+    const home = req.nextUrl.clone();
+    home.pathname = "/";
+    home.search = "";
+    return NextResponse.redirect(home);
+  }
+
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set(STORE_SUBDOMAIN_HEADER, subdomain);
   // Custom-domain: visitor is already at the domain root, so links must be root-relative
@@ -146,7 +177,10 @@ async function resolveViaEdgeConfig(hostname: string, req: NextRequest): Promise
 }
 
 export const config = {
-  // Run on everything except Next internals, the auth/API routes, and files with an
-  // extension (favicon, images, etc.).
-  matcher: ["/((?!_next/|api/|.*\\..*).*)"],
+  // Run on everything except Next internals, most `/api/*` routes, and files with an
+  // extension (favicon, images, etc.). NOTE: `/api/auth` is deliberately NOT excluded
+  // (`api/(?!auth)`) so the storefront-only lockdown can redirect merchant NextAuth
+  // endpoints away from custom domains; on the platform host they pass straight
+  // through (`isKnownPlatformHost` → `next()`), so merchant sign-in is unaffected.
+  matcher: ["/((?!_next/|api/(?!auth)|.*\\..*).*)"],
 };

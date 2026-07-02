@@ -126,6 +126,41 @@ export interface EdgeDomainEntry {
 }
 
 /**
+ * Whether `pathname` is a STOREFRONT (customer-facing) path. A custom domain — and a
+ * `/s/<sub>` storefront request — must serve ONLY these; the middleware redirects
+ * everything else (merchant `/sign-in`, the `(admin)` dashboard, `/platform`,
+ * marketing, NextAuth `/api/auth`) to the shop home, so the platform's admin/login
+ * can never render under a merchant's own branded domain (§9 tenant isolation).
+ *
+ * DEFAULT-DENY: only paths matched here are allowed. Customer login/checkout work
+ * because those are server actions that POST to `/account` and `/checkout` (both
+ * allowed), NOT to the merchant `/sign-in`.
+ *
+ * Collision note: `/products` and `/collections` (bare) are the ADMIN list routes,
+ * and `/{base}/new` + `/{base}/edit/…` are admin editors — only a single storefront
+ * handle segment (`/products/<handle>`) is customer-facing, hence the per-segment
+ * check rather than a blanket prefix allow.
+ */
+export function isStorefrontPath(pathname: string): boolean {
+  if (pathname === "/" || pathname === "/preview") return true;
+
+  // Sections with no admin-path collision — exact match or any subpath.
+  for (const base of ["/cart", "/checkout", "/search", "/account", "/order-confirmation", "/pages"]) {
+    if (pathname === base || pathname.startsWith(`${base}/`)) return true;
+  }
+
+  // Storefront product/collection DETAIL is `/{base}/<handle>`; the bare list and the
+  // `new` / `edit` editors under it are admin-only, so allow only a real handle segment.
+  for (const base of ["/products", "/collections"]) {
+    if (pathname.startsWith(`${base}/`)) {
+      const first = pathname.slice(base.length + 1).split("/")[0];
+      if (first && first !== "new" && first !== "edit") return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Build the public origin (`scheme://host`) for the current request, trusting the
  * `Host` header so per-store `robots.txt` / `sitemap.xml` URLs carry the tenant's own
  * subdomain (Next's `nextUrl.origin` reflects the server bind host, not the Host).
