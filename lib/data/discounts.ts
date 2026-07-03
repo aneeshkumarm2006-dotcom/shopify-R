@@ -173,6 +173,38 @@ export async function redeemDiscount(storeId: string, code: string): Promise<voi
   await Discounts.updateOne(storeId, { code: normalize(code) }, { $inc: { usedCount: 1 } });
 }
 
+/**
+ * Atomically CLAIM one usage of a code, enforcing its `usageLimit` at the increment
+ * itself (not via a separate read — that read-then-write is a TOCTOU that lets N
+ * concurrent checkouts all pass a `usedCount < limit` check and all redeem). The
+ * guarded `$inc` matches only while a seat is free (`usedCount < usageLimit`, or an
+ * unlimited/null-limit code), so the (limit+1)-th concurrent claim simply fails.
+ * Returns true when a seat was claimed. Codes with no limit always succeed.
+ */
+export async function claimDiscount(storeId: string, code: string): Promise<boolean> {
+  if (!isDbConfigured()) return true;
+  const updated = await Discounts.updateOne(
+    storeId,
+    {
+      code: normalize(code),
+      status: "active",
+      $or: [{ usageLimit: null }, { $expr: { $lt: ["$usedCount", "$usageLimit"] } }],
+    },
+    { $inc: { usedCount: 1 } },
+  );
+  return updated != null;
+}
+
+/** Release a previously-claimed seat (compensating action when the order fails to persist). */
+export async function releaseDiscount(storeId: string, code: string): Promise<void> {
+  if (!isDbConfigured()) return;
+  await Discounts.updateOne(
+    storeId,
+    { code: normalize(code), usedCount: { $gt: 0 } },
+    { $inc: { usedCount: -1 } },
+  );
+}
+
 function mapCodeClash(err: unknown): Error {
   if (err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000) {
     return new Error("CODE_TAKEN");

@@ -2,16 +2,25 @@ import type { Address, OrderLineItem, SettlementMethod, Store } from "@/types";
 import { getProductsByIds } from "./products";
 import { findOrCreateCustomer, recordCustomerOrder } from "./customers";
 import { createOrder } from "./orders";
-import { decrementInventory, type DecrementLine } from "./inventory";
+import {
+  reserveInventory,
+  releaseInventory,
+  logOrderDecrements,
+  type DecrementLine,
+  type AppliedDecrement,
+} from "./inventory";
 import { markCartConverted } from "./cart";
 import { getNextOrderNumber } from "./sequence";
 import { getStore } from "./store";
-import { validateDiscount, redeemDiscount } from "./discounts";
+import { validateDiscount, claimDiscount, releaseDiscount } from "./discounts";
 import { resolveShippingRate } from "./shipping";
 import { computeTax } from "./tax";
 import { validateGiftCard, redeemGiftCard, creditGiftCard, applyGiftCard } from "./gift-cards";
 import { createPaymentIntent } from "@/lib/payments";
 import { sendOrderConfirmation } from "@/lib/email";
+
+/** Round a money amount to whole cents, killing binary-float drift (e.g. 100.30000000001). */
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** Settlement methods the store offers, keyed by `SettlementMethod`, with safe defaults. */
 export function enabledSettlements(store: Store): Record<SettlementMethod, boolean> {
@@ -119,7 +128,13 @@ export async function placeOrder(
     const product = byId.get(line.productId);
     const variant = product?.variants.find((v) => v.id === line.variantId);
     if (!product || !variant) continue; // dropped: not this store's, or stale
-    const quantity = Math.max(1, Math.floor(line.quantity));
+    // Drop non-finite quantities (a client sending `null`/"abc"/Infinity would make
+    // Math.floor → NaN, and a NaN line total silently passes the stock check as
+    // `NaN > available === false`). Finite values are clamped to a sane [1, 100000]
+    // range (0/negative → 1, matching the friendly UX the tests pin).
+    const raw = Number(line.quantity);
+    if (!Number.isFinite(raw)) continue;
+    const quantity = Math.min(100_000, Math.max(1, Math.floor(raw)));
     lineItems.push({
       title: product.title,
       variant: product.variants.length > 1 ? variant.title : "",
@@ -128,7 +143,12 @@ export async function placeOrder(
       quantity,
     });
     if (variant.inventory.trackInventory) {
-      decrements.push({ productId: product._id, variantId: variant.id, quantity });
+      decrements.push({
+        productId: product._id,
+        variantId: variant.id,
+        quantity,
+        policy: variant.inventory.policy,
+      });
     }
     const key = `${product._id}::${variant.id}`;
     const entry = requested.get(key) ?? {
@@ -160,7 +180,7 @@ export async function placeOrder(
     }
   }
 
-  const subtotal = lineItems.reduce((sum, l) => sum + l.price * l.quantity, 0);
+  const subtotal = round2(lineItems.reduce((sum, l) => sum + l.price * l.quantity, 0));
 
   // 1b. Load the store once — needed for settlement validation, currency, and the
   //     confirmation email below. (No `getStore` round-trip is repeated at the end.)
@@ -173,7 +193,10 @@ export async function placeOrder(
   let discountCode: string | null = null;
   if (input.discountCode) {
     const result = await validateDiscount(storeId, input.discountCode, subtotal);
-    if (result.ok) {
+    // Claim the usage seat ATOMICALLY here (enforces usageLimit under concurrency). Only
+    // if the seat is claimed do we apply the discount; a raced-to-cap code is ignored
+    // (subtotal stands) rather than over-redeemed. Released on order-persist failure.
+    if (result.ok && (await claimDiscount(storeId, result.code))) {
       discountAmount = result.amount;
       discountCode = result.code;
     }
@@ -189,13 +212,42 @@ export async function placeOrder(
     region: input.region,
     rateId: input.shippingRateId,
   });
-  const shippingTotal = shipping.price;
-  const taxTotal = computeTax(store?.settings.tax, {
-    subtotal: discountedSubtotal,
-    shipping: shippingTotal,
-    region: input.region,
-  });
-  const grossTotal = discountedSubtotal + shippingTotal + taxTotal;
+  const shippingTotal = round2(shipping.price);
+  const taxTotal = round2(
+    computeTax(store?.settings.tax, {
+      subtotal: discountedSubtotal,
+      shipping: shippingTotal,
+      region: input.region,
+    }),
+  );
+  const grossTotal = round2(discountedSubtotal + shippingTotal + taxTotal);
+
+  // 1d. Validate the settlement method NOW — before any committing side effect — so an
+  //     unavailable method fails the checkout without leaving reserved stock / a drawn
+  //     gift card / a claimed discount behind to compensate.
+  const settlementMethod: SettlementMethod = input.settlementMethod ?? "online";
+  if (store && !enabledSettlements(store)[settlementMethod]) {
+    // Nothing committed yet except the discount claim above; give it back.
+    if (discountCode) await releaseDiscount(storeId, discountCode).catch(() => {});
+    throw new CheckoutError("That payment method isn't available for this store.");
+  }
+
+  // 1c-quater. RESERVE inventory atomically, BEFORE any committing side effect (gift
+  // card draw / order write). The guarded `$inc` in `reserveInventory` is what actually
+  // prevents overselling a `deny` variant under concurrent checkouts — the in-memory
+  // pre-check above is only a fast early-out. On a race-lost shortfall we release what
+  // was applied and reject; nothing else has been committed yet.
+  const reservation = await reserveInventory(storeId, decrements);
+  if (!reservation.ok) {
+    await releaseInventory(storeId, reservation.applied);
+    // Give back the discount seat claimed above — this checkout won't complete.
+    if (discountCode) await releaseDiscount(storeId, discountCode).catch(() => {});
+    const p = byId.get(reservation.failed.productId);
+    const v = p?.variants.find((x) => x.id === reservation.failed.variantId);
+    const label = v?.title ? `${p?.title} · ${v.title}` : (p?.title ?? "An item");
+    throw new CheckoutError(`${label} just went out of stock. Please adjust your cart.`);
+  }
+  const reservedLines: AppliedDecrement[] = reservation.applied;
 
   // 1c-ter. Gift card (Phase 4). Validated + drawn down SERVER-SIDE: the client only
   // names a code, never an amount. The atomic guarded `$inc` in `redeemGiftCard` makes
@@ -206,56 +258,62 @@ export async function placeOrder(
   let giftCardCode: string | null = null;
   if (input.giftCardCode) {
     const gc = await validateGiftCard(storeId, input.giftCardCode);
-    if (gc.ok) {
-      const applied = applyGiftCard(gc.card.balance, grossTotal).applied;
+    // Only draw a card issued in the store's own currency — no implicit FX. `currency`
+    // is the store's display symbol; both card and store carry the same symbol string.
+    const storeCurrency = store?.settings.currency;
+    if (gc.ok && (!storeCurrency || gc.card.currency === storeCurrency)) {
+      const applied = round2(applyGiftCard(gc.card.balance, grossTotal).applied);
       if (applied > 0 && (await redeemGiftCard(storeId, gc.card.code, applied))) {
         giftCardAmount = applied;
         giftCardCode = gc.card.code;
       }
     }
   }
-  const total = Math.max(0, grossTotal - giftCardAmount);
+  const total = round2(Math.max(0, grossTotal - giftCardAmount));
 
-  // 1d. Resolve + validate the settlement method against what the store offers.
-  //     COD / in-store keep the order `pending` (merchant marks paid on delivery);
-  //     `online` runs the (stubbed) processor seam below.
-  const settlementMethod: SettlementMethod = input.settlementMethod ?? "online";
-  if (store && !enabledSettlements(store)[settlementMethod]) {
-    throw new CheckoutError("That payment method isn't available for this store.");
-  }
-
-  // 2. Match-or-create the customer by email within the store.
-  const customer = await findOrCreateCustomer(storeId, {
-    email: input.contact.email,
-    name: input.contact.name,
-    ...(input.contact.phone ? { phone: input.contact.phone } : {}),
-    address: input.shippingAddress,
-  });
-
-  // 3. Atomic per-store order number.
-  const orderNumber = await getNextOrderNumber(storeId);
-
-  // 3b. Payment seam (Stage 12, PRD §6.11). Only the `online` method touches the
-  //     processor; in the MVP it's stubbed and returns null, so the order settles
-  //     offline as `pending`. COD / in-store skip the seam entirely and stay pending
-  //     until the merchant marks them paid on delivery / at pickup.
-  const intent =
-    settlementMethod === "online"
-      ? await createPaymentIntent(storeId, {
-          amount: total,
-          currency: input.currency ?? "$",
-          customerEmail: input.contact.email,
-        })
-      : null;
-
-  // 4. Persist the order (pending by default, with frozen snapshots + age stamp).
-  //    If this throws, re-credit any gift card drawn above so no value is lost.
+  // 2–4. From here every step is a committing side effect that can throw
+  //   (customer upsert, order-number allocation, payment intent, order persist). Wrap
+  //   them ALL in one try so ANY failure compensates every committed resource —
+  //   inventory reservation, gift-card draw, and discount claim — leaving no orphaned
+  //   debit. (Previously only the createOrder call was guarded, so a throw in the
+  //   customer/order-number/intent steps drained a gift card with nothing to show.)
   let order;
+  let customerId = "";
+  let orderNumber = 0;
   try {
+    // 2. Match-or-create the customer by email within the store.
+    const customer = await findOrCreateCustomer(storeId, {
+      email: input.contact.email,
+      name: input.contact.name,
+      ...(input.contact.phone ? { phone: input.contact.phone } : {}),
+      address: input.shippingAddress,
+    });
+    customerId = customer._id;
+
+    // 3. Atomic per-store order number.
+    orderNumber = await getNextOrderNumber(storeId);
+
+    // 3b. Payment seam (Stage 12, PRD §6.11). A fully gift-card/discount-covered order
+    //     has nothing to charge — skip the processor (most PSPs reject a zero amount,
+    //     which would fail an already-paid checkout) and settle `paid`. Prefer the
+    //     store's ISO-4217 code over the "$" symbol; processors require "USD".
+    const currencyCode = store?.settings.currencyCode ?? "USD";
+    const isZeroCharge = total <= 0;
+    const intent =
+      settlementMethod === "online" && !isZeroCharge
+        ? await createPaymentIntent(storeId, {
+            amount: total,
+            currency: currencyCode,
+            customerEmail: input.contact.email,
+          })
+        : null;
+    const paymentStatus =
+      settlementMethod === "online" && isZeroCharge ? "paid" : (intent?.status ?? "pending");
+
     order = await createOrder(storeId, {
       storeId,
       orderNumber,
-      customerId: customer._id,
+      customerId,
       lineItems,
       subtotal,
       discountAmount,
@@ -269,26 +327,34 @@ export async function placeOrder(
       shippingAddress: input.shippingAddress,
       contact: input.contact,
       settlementMethod,
-      paymentStatus: intent?.status ?? "pending",
+      paymentStatus,
       fulfillmentStatus: "unfulfilled",
       ageVerifiedAt: input.ageVerifiedAt,
       paymentIntent: intent?.id ?? null,
     });
   } catch (err) {
+    // Order failed to persist — undo BOTH committed resources so nothing is lost:
+    // re-credit any gift card drawn AND release the inventory reserved above.
     if (giftCardCode && giftCardAmount > 0) {
       await creditGiftCard(storeId, giftCardCode, giftCardAmount).catch(() => {});
     }
+    await releaseInventory(storeId, reservedLines).catch(() => {});
+    if (discountCode) await releaseDiscount(storeId, discountCode).catch(() => {});
     throw err;
   }
 
-  // 5–7. Decrement stock, update customer totals, retire the cart. None of these
-  // should undo the placed order if they hiccup, so failures are swallowed.
+  // 5–7. Log the (already-applied) inventory audit rows, update customer totals, retire
+  // the cart. The stock was moved by the reservation above, so these are post-commit
+  // bookkeeping and best-effort — a hiccup must not undo the placed order.
   try {
-    if (decrements.length > 0) {
-      await decrementInventory(storeId, decrements, order._id);
+    if (reservedLines.length > 0) {
+      await logOrderDecrements(storeId, reservedLines, order._id);
     }
-    await recordCustomerOrder(storeId, customer._id, total);
-    if (discountCode) await redeemDiscount(storeId, discountCode);
+    // Customer lifetime value grows by the order's GROSS total (goods + shipping + tax),
+    // not the gift-card-net charge — matching Shopify's `total_spent` so segments
+    // (min_spent) and LTV analytics aren't understated when a gift card is used.
+    await recordCustomerOrder(storeId, customerId, grossTotal);
+    // Discount usage was already claimed atomically at apply time (no post-order $inc).
     if (input.sessionId) await markCartConverted(storeId, input.sessionId);
   } catch {
     /* order is already placed; post-steps are best-effort */

@@ -1,5 +1,9 @@
+import { randomInt } from "node:crypto";
 import type { GiftCard } from "@/types";
 import { isDbConfigured, GiftCards } from "@/lib/db";
+
+/** Round stored value to whole cents (gift cards are money — no fractional-cent drift). */
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Gift cards (Phase 4) — store-issued stored value redeemed at checkout. The math
@@ -15,11 +19,11 @@ export function applyGiftCard(
   balance: number,
   amountDue: number,
 ): { applied: number; remainingBalance: number; remainingDue: number } {
-  const applied = Math.max(0, Math.min(balance, amountDue));
+  const applied = round2(Math.max(0, Math.min(balance, amountDue)));
   return {
     applied,
-    remainingBalance: balance - applied,
-    remainingDue: amountDue - applied,
+    remainingBalance: round2(balance - applied),
+    remainingDue: round2(amountDue - applied),
   };
 }
 
@@ -38,10 +42,17 @@ export function giftCardState(
 
 const GIFT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
 
-/** Generate a human-friendly gift-card code, e.g. `GIFT-AB3K-9XQF-M2WP`. */
-export function generateGiftCardCode(rand: () => number = Math.random): string {
-  const group = () =>
-    Array.from({ length: 4 }, () => GIFT_ALPHABET[Math.floor(rand() * GIFT_ALPHABET.length)]).join("");
+/**
+ * Generate a human-friendly gift-card code, e.g. `GIFT-AB3K-9XQF-M2WP`. Gift cards are
+ * bearer money instruments, so the default draws from a CSPRNG (`crypto.randomInt`) —
+ * NOT `Math.random`, whose PRNG state is recoverable from a few observed codes, letting
+ * an attacker predict and redeem others. The `rand` seam stays injectable for tests.
+ */
+export function generateGiftCardCode(rand?: () => number): string {
+  const pick = rand
+    ? () => GIFT_ALPHABET[Math.floor(rand() * GIFT_ALPHABET.length)]
+    : () => GIFT_ALPHABET[randomInt(GIFT_ALPHABET.length)];
+  const group = () => Array.from({ length: 4 }, pick).join("");
   return `GIFT-${group()}-${group()}-${group()}`;
 }
 
@@ -150,7 +161,11 @@ export async function redeemGiftCard(
   );
 }
 
-/** Re-credit a card (compensating action if an order fails after redemption). */
+/**
+ * Re-credit a card (compensating action if an order fails after redemption). Guarded so
+ * the balance can never exceed `initialBalance` — a stale/duplicate compensation can't
+ * inflate a card's value beyond what was issued.
+ */
 export async function creditGiftCard(
   storeId: string,
   code: string,
@@ -159,7 +174,10 @@ export async function creditGiftCard(
   if (!isDbConfigured() || amount <= 0) return;
   await GiftCards.updateOne(
     storeId,
-    { code: code.trim().toUpperCase() },
+    {
+      code: code.trim().toUpperCase(),
+      $expr: { $lte: [{ $add: ["$balance", amount] }, "$initialBalance"] },
+    },
     { $inc: { balance: amount } },
   );
 }

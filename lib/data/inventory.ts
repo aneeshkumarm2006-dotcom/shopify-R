@@ -1,4 +1,4 @@
-import type { InventoryAdjustment, InventoryReason, Product, Variant } from "@/types";
+import type { InventoryAdjustment, InventoryPolicy, InventoryReason, Product, Variant } from "@/types";
 import { mockInventoryAdjustments, mockProducts } from "./mocks";
 import { resolve, scoped } from "./_util";
 import { isDbConfigured, InventoryAdjustments, Products } from "@/lib/db";
@@ -170,33 +170,110 @@ export interface DecrementLine {
   productId: string;
   variantId: string;
   quantity: number;
+  /** `deny` variants are guarded so a concurrent order can't push them below zero. */
+  policy: InventoryPolicy;
+}
+
+/** A successfully reserved (decremented) line + the authoritative post-decrement qty. */
+export interface AppliedDecrement {
+  productId: string;
+  variantId: string;
+  quantity: number;
+  resultingQuantity: number;
 }
 
 /**
- * Decrement seam for order placement (PRD §6.5 — "automatic decrement on order
- * placement, writes an inventoryAdjustments log entry"). Each line subtracts its
- * quantity and writes an audit row with `reason: "order"` + the `orderId`. Only
- * variants with `trackInventory` are decremented; untracked ones are skipped.
- * Built and unit-tested here; Stage 10's checkout calls it.
+ * Atomically RESERVE stock for an order (PRD §6.5), BEFORE the order is committed. Each
+ * line is a single guarded `$inc` on the embedded variant, so concurrent checkouts can
+ * neither lose a write (the old read-modify-`$set` did — last-writer-wins) nor oversell
+ * a `deny` variant: the `$gte` guard makes the decrement match only while enough stock
+ * remains. `continue`-policy variants decrement unconditionally (overselling is allowed
+ * by design). On the first `deny` shortfall it stops and returns `ok:false` with what
+ * was already applied, so the caller can `releaseInventory` those and reject the order.
+ * Untracked variants must be filtered out by the caller (checkout already does).
  */
-export async function decrementInventory(
+export async function reserveInventory(
   storeId: string,
   lines: DecrementLine[],
-  orderId: string,
-): Promise<void> {
+): Promise<
+  | { ok: true; applied: AppliedDecrement[] }
+  | { ok: false; applied: AppliedDecrement[]; failed: DecrementLine }
+> {
+  if (!isDbConfigured()) {
+    // Mock mode: no persistence; the in-memory pre-check already gated oversell.
+    return { ok: true, applied: lines.map((l) => ({ ...l, resultingQuantity: 0 })) };
+  }
+  const applied: AppliedDecrement[] = [];
   for (const line of lines) {
-    await applyAdjustment(storeId, {
+    const qty = Math.abs(line.quantity);
+    const elem =
+      line.policy === "deny"
+        ? { id: line.variantId, "inventory.quantity": { $gte: qty } }
+        : { id: line.variantId };
+    const updated = (await Products.updateOne(
+      storeId,
+      { _id: line.productId, variants: { $elemMatch: elem } },
+      { $inc: { "variants.$.inventory.quantity": -qty } },
+    )) as Product | null;
+    if (!updated) {
+      // deny shortfall (or the variant vanished mid-checkout) → stop; caller compensates.
+      return { ok: false, applied, failed: line };
+    }
+    const v = updated.variants.find((x) => x.id === line.variantId);
+    applied.push({
       productId: line.productId,
       variantId: line.variantId,
+      quantity: qty,
+      resultingQuantity: v?.inventory.quantity ?? 0,
+    });
+  }
+  return { ok: true, applied };
+}
+
+/** Compensating re-increment when a reserved order fails to persist (or a deny line fails). */
+export async function releaseInventory(storeId: string, applied: AppliedDecrement[]): Promise<void> {
+  if (!isDbConfigured()) return;
+  for (const a of applied) {
+    await Products.updateOne(
+      storeId,
+      { _id: a.productId, variants: { $elemMatch: { id: a.variantId } } },
+      { $inc: { "variants.$.inventory.quantity": a.quantity } },
+    ).catch(() => {});
+  }
+}
+
+/**
+ * Write the `reason: "order"` audit rows + per-location breakdown AFTER the order is
+ * committed (the quantity was already moved by `reserveInventory`). Idempotent by
+ * `orderId`: a retry that re-drives fulfillment won't double-log or double-decrement,
+ * since the guarded reservation ran once and this skips lines already recorded.
+ */
+export async function logOrderDecrements(
+  storeId: string,
+  applied: AppliedDecrement[],
+  orderId: string,
+): Promise<void> {
+  if (!isDbConfigured()) return;
+  for (const a of applied) {
+    const exists = await InventoryAdjustments.findOne(storeId, {
+      orderId,
+      productId: a.productId,
+      variantId: a.variantId,
       reason: "order",
-      delta: -Math.abs(line.quantity),
+    });
+    if (exists) continue;
+    await InventoryAdjustments.create(storeId, {
+      productId: a.productId,
+      variantId: a.variantId,
+      delta: -a.quantity,
+      reason: "order",
+      resultingQuantity: a.resultingQuantity,
       orderId,
     });
-    // Keep the per-location breakdown in step by drawing from the default location.
     try {
-      await decrementDefaultLevel(storeId, line.productId, line.variantId, line.quantity);
+      await decrementDefaultLevel(storeId, a.productId, a.variantId, a.quantity);
     } catch {
-      /* best-effort: the authoritative aggregate is already decremented above */
+      /* best-effort: the authoritative aggregate is already decremented */
     }
   }
 }
