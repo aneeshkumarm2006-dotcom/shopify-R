@@ -156,13 +156,23 @@ export async function setOrderPaymentStatusByIntent(
   storeId: string,
   paymentIntent: string,
   paymentStatus: PaymentStatus,
+  /**
+   * When a webhook reports a captured amount, require it to equal the order total (to
+   * the cent). A mismatch matches NO order, so a tampered/replayed event can't confirm
+   * an order for a different amount. Omitted → no amount reconciliation (stub mode).
+   */
+  expectedAmount?: number,
 ): Promise<Order | null> {
+  const amountGuard =
+    expectedAmount != null ? { total: Math.round(expectedAmount * 100) / 100 } : {};
   if (!isDbConfigured()) {
-    const found = scoped(mockOrders, storeId).find((o) => o.paymentIntent === paymentIntent);
+    const found = scoped(mockOrders, storeId).find(
+      (o) => o.paymentIntent === paymentIntent && (expectedAmount == null || o.total === amountGuard.total),
+    );
     if (!found) return null;
     return resolve({ ...found, paymentStatus, updatedAt: new Date().toISOString() });
   }
-  return Orders.updateOne(storeId, { paymentIntent }, { $set: { paymentStatus } });
+  return Orders.updateOne(storeId, { paymentIntent, ...amountGuard }, { $set: { paymentStatus } });
 }
 
 /* ============================================================

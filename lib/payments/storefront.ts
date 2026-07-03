@@ -110,14 +110,17 @@ export async function handlePaymentWebhook(
     return { handled: false, reason: `ignored event ${event.type}` };
   }
 
-  // Tenant-scoped reconciliation: look the order up by its intent within the
-  // store the processor told us about (carried in intent metadata at creation).
+  // Tenant-scoped reconciliation: look the order up by its intent within the store the
+  // processor told us about (carried in intent metadata at creation) AND, when the event
+  // carries a captured amount, require it to match the order total — so a tampered/
+  // replayed event can't confirm an order for the wrong amount.
   const order = await setOrderPaymentStatusByIntent(
     event.storeId,
     event.paymentIntentId,
     status,
+    event.amount,
   );
   return order
     ? { handled: true, reason: `order ${order.orderNumber} → ${status}` }
-    : { handled: false, reason: "no order matches payment intent" };
+    : { handled: false, reason: "no order matches payment intent (or amount mismatch)" };
 }

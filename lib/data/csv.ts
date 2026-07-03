@@ -42,9 +42,14 @@ export interface ParsedProductRow {
 /* --------------------------------------------------------------- export ---- */
 
 function escapeField(value: string): string {
+  let v = value;
+  // CSV formula-injection defense (CWE-1236): a cell beginning with =, +, -, @, or a
+  // control char is executed as a formula by Excel/Sheets. Prefix an apostrophe so the
+  // spreadsheet treats it as literal text. Must run BEFORE the quote-wrapping below.
+  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
   // Quote when the value contains a comma, quote, or newline; double interior quotes.
-  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
+  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
 }
 
 function row(fields: (string | number)[]): string {
@@ -84,7 +89,14 @@ export function productsToCsv(products: Product[]): string {
  * escaped `""` quotes, and commas/newlines inside quotes. Trailing blank lines are
  * dropped. Exported for tests.
  */
+/** Hard caps so a huge upload can't exhaust memory (CWE-400). ~5MB / 50k rows. */
+const MAX_CSV_BYTES = 5 * 1024 * 1024;
+const MAX_CSV_ROWS = 50_000;
+
 export function parseCsvGrid(text: string): string[][] {
+  if (text.length > MAX_CSV_BYTES) {
+    throw new Error(`CSV too large (max ${Math.floor(MAX_CSV_BYTES / 1024 / 1024)}MB).`);
+  }
   const rows: string[][] = [];
   let field = "";
   let record: string[] = [];
@@ -112,6 +124,7 @@ export function parseCsvGrid(text: string): string[][] {
     } else if (ch === "\n") {
       record.push(field);
       rows.push(record);
+      if (rows.length > MAX_CSV_ROWS) throw new Error(`CSV has too many rows (max ${MAX_CSV_ROWS}).`);
       record = [];
       field = "";
     } else {

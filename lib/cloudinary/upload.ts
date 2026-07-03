@@ -20,6 +20,10 @@ export async function uploadToCloudinary(file: File): Promise<string | null> {
   body.append("timestamp", String(sig.timestamp));
   body.append("signature", sig.signature);
   body.append("folder", sig.folder);
+  // Must match the signed values exactly, or Cloudinary rejects the signature. These
+  // constrain the upload to images within a size ceiling server-side.
+  body.append("allowed_formats", sig.allowedFormats);
+  body.append("max_file_size", String(sig.maxFileSize));
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`,

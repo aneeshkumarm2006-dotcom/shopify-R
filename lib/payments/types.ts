@@ -66,6 +66,15 @@ export interface PaymentWebhookEvent {
   paymentIntentId: string;
   /** Order the intent settles, when the processor echoes our metadata. */
   orderId?: string;
+  /**
+   * Amount the processor says was captured, in the STORE's major units (already
+   * normalized from the provider's minor units by the adapter). When present it is
+   * reconciled against the order total before the order is marked paid — a mismatch is
+   * refused, so a tampered/replayed event can't confirm a different amount.
+   */
+  amount?: number;
+  /** ISO-4217 currency the capture settled in (adapter-normalized). */
+  currency?: string;
 }
 
 /**
@@ -80,7 +89,14 @@ export interface PaymentProvider {
     storeId: string,
     input: CreatePaymentIntentInput,
   ): Promise<PaymentIntent | null>;
-  /** Verify + normalize a raw webhook body, or `null` if it can't be trusted. */
+  /**
+   * Verify + normalize a raw webhook body, or `null` if it can't be trusted. A real
+   * adapter MUST, before returning a non-null event:
+   *   1. Verify the provider signature over the RAW body (never the parsed JSON).
+   *   2. Enforce a timestamp tolerance + nonce/idempotency check to reject replays.
+   *   3. Normalize `amount`/`currency` so the caller can reconcile against the order.
+   * Returning `null` on any failed check keeps the route acknowledging-and-ignoring.
+   */
   parseWebhook(rawBody: string, signature: string | null): PaymentWebhookEvent | null;
 }
 

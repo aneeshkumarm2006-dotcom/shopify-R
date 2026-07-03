@@ -208,7 +208,9 @@ export async function placeOrder(
   // tampered client can't undercut shipping or tax. A store with neither configured
   // gets free "Standard" shipping and zero tax, so `total` stays subtotal − discount.
   const shipping = resolveShippingRate(store?.settings.shipping, {
-    subtotal: discountedSubtotal,
+    // Free-shipping thresholds evaluate on the PRE-discount goods subtotal (Shopify
+    // parity) — an order-level discount shouldn't drop a cart back under the free bar.
+    subtotal,
     region: input.region,
     rateId: input.shippingRateId,
   });

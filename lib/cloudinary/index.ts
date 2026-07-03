@@ -26,6 +26,10 @@ export function isCloudinaryConfigured(): boolean {
   return Boolean(CLOUD_NAME && API_KEY && API_SECRET);
 }
 
+/** Upload constraints baked INTO the signature so the browser can't widen them. */
+export const UPLOAD_ALLOWED_FORMATS = "jpg,jpeg,png,webp,gif";
+export const UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 /** The signed params a browser needs to POST a file straight to Cloudinary. */
 export interface UploadSignature {
   cloudName: string;
@@ -33,14 +37,18 @@ export interface UploadSignature {
   timestamp: number;
   signature: string;
   folder: string;
+  allowedFormats: string;
+  maxFileSize: number;
 }
 
 /**
  * Build a SHA-1 signature for a direct (unsigned-by-the-browser, signed-by-us)
  * upload. Cloudinary signs the alphabetically-sorted, `&`-joined params that are
  * sent *besides* `file`/`api_key`/`resource_type`, with the API secret appended.
- * We sign only `folder` + `timestamp`, so the browser cannot tamper with the
- * destination folder without invalidating the signature.
+ * We sign `allowed_formats` + `folder` + `max_file_size` + `timestamp`, so the
+ * browser can tamper with NONE of them without invalidating the signature — the
+ * destination folder, the accepted image formats, and the size ceiling are all
+ * enforced by Cloudinary as part of the signed request (not merely client-chosen).
  *
  * @param folder  Cloudinary folder to scope the asset to (e.g. a store id).
  * @param timestamp  Unix seconds; passed in so callers can mint it (scripts can't
@@ -50,9 +58,22 @@ export function signUpload(folder: string, timestamp: number): UploadSignature {
   if (!isCloudinaryConfigured()) {
     throw new Error("Cloudinary is not configured (missing CLOUDINARY_* env vars).");
   }
-  const toSign = `folder=${folder}&timestamp=${timestamp}`;
+  // Alphabetically-sorted param string is what Cloudinary expects for the signature.
+  const toSign =
+    `allowed_formats=${UPLOAD_ALLOWED_FORMATS}` +
+    `&folder=${folder}` +
+    `&max_file_size=${UPLOAD_MAX_FILE_SIZE}` +
+    `&timestamp=${timestamp}`;
   const signature = createHash("sha1")
     .update(toSign + API_SECRET)
     .digest("hex");
-  return { cloudName: CLOUD_NAME!, apiKey: API_KEY!, timestamp, signature, folder };
+  return {
+    cloudName: CLOUD_NAME!,
+    apiKey: API_KEY!,
+    timestamp,
+    signature,
+    folder,
+    allowedFormats: UPLOAD_ALLOWED_FORMATS,
+    maxFileSize: UPLOAD_MAX_FILE_SIZE,
+  };
 }

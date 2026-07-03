@@ -18,6 +18,18 @@ test("disabled settings ⇒ zero tax", () => {
   assert.equal(computeTax(s, { subtotal: 100 }), 0);
 });
 
+test("a blank-region override does NOT match a shopper with no region (regression)", () => {
+  // Mis-entered override with region:"" must not become the default rate for a
+  // region-less shopper — the base rate (10%) applies, not the override (25%).
+  const s: TaxSettings = {
+    enabled: true,
+    rate: 10,
+    regionRates: [{ region: "", rate: 25 }],
+  };
+  assert.equal(taxRateFor(s, undefined), 10);
+  assert.equal(taxRateFor(s, ""), 10);
+});
+
 test("default rate applies to the (post-discount) subtotal", () => {
   const s: TaxSettings = { enabled: true, rate: 8.5 };
   assert.equal(computeTax(s, { subtotal: 200 }), 17); // 200 * 8.5%

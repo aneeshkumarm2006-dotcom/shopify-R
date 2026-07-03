@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStoreBySubdomain, recordPageview } from "@/lib/data";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Storefront pageview beacon (operator visitor analytics). The `<TrackPageview>`
@@ -20,6 +21,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     };
     const subdomain = typeof body.subdomain === "string" ? body.subdomain.trim().toLowerCase() : "";
     if (!subdomain) return NextResponse.json({ ok: false });
+
+    // Throttle per client IP + store so this unauthenticated beacon can't be looped to
+    // flood a store's analytics / bloat the pageviews collection. Fails open (soft
+    // limit): a DB blip shouldn't drop legitimate analytics.
+    const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim() || "unknown";
+    const { allowed } = await checkRateLimit({
+      key: `track:${subdomain}:${ip}`,
+      limit: 120,
+      windowSeconds: 60,
+    });
+    if (!allowed) return NextResponse.json({ ok: false });
 
     const store = await getStoreBySubdomain(subdomain);
     if (!store || store.status !== "live") return NextResponse.json({ ok: false });

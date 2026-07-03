@@ -58,7 +58,10 @@ export function productMatchesRule(product: Product, rule: CollectionRule): bool
     case "equals":
       return haystack.some((s) => s === needle);
     case "not_equals":
-      return haystack.length > 0 && !haystack.some((s) => s === needle);
+      // A product with NO value for the field trivially "is not equal to X" — it must
+      // match (as it does in Shopify). The old `haystack.length > 0` guard wrongly
+      // excluded valueless products from a "tag is not sale" collection.
+      return !haystack.some((s) => s === needle);
     case "contains":
       return haystack.some((s) => s.includes(needle));
     case "starts_with":

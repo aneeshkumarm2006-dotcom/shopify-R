@@ -75,3 +75,17 @@ test("status defaults to draft when blank or unknown", () => {
   assert.equal(rows[0]!.status, "draft");
   assert.equal(rows[1]!.status, "draft");
 });
+
+test("export neutralizes CSV formula-injection payloads (CWE-1236)", () => {
+  const csv = productsToCsv([
+    product({ handle: "x", title: '=HYPERLINK("http://evil")', tags: ["@SUM(A1)"] }),
+  ]);
+  const dataLine = csv.split("\n")[1]!;
+  assert.ok(dataLine.includes("'=HYPERLINK"), "title formula should be apostrophe-prefixed");
+  assert.ok(dataLine.includes("'@SUM(A1)"), "tag formula should be apostrophe-prefixed");
+});
+
+test("parseCsvGrid rejects an oversized upload (memory-DoS guard)", () => {
+  const huge = "a,b\n".repeat(60_000); // > 50k rows
+  assert.throws(() => parseCsvGrid(huge), /too many rows/);
+});

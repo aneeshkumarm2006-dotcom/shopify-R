@@ -89,3 +89,19 @@ test("filter preserves input order", () => {
   });
   assert.deepEqual(out.map((p) => p._id), ["a", "c"]);
 });
+
+test("not_equals matches a product that HAS the value only when it differs", () => {
+  const withSale = product({ tags: ["sale", "premium"] });
+  const withoutSale = product({ tags: ["premium"] });
+  assert.ok(!productMatchesRule(withSale, { field: "tag", op: "not_equals", value: "sale" }));
+  assert.ok(productMatchesRule(withoutSale, { field: "tag", op: "not_equals", value: "sale" }));
+});
+
+test("not_equals matches a product with NO value for the field (regression)", () => {
+  // A product with no tags "is not equal to sale" — it must belong to a
+  // "tag is not sale" collection, matching Shopify (the old length>0 guard dropped it).
+  const noTags = product({ tags: [] });
+  assert.ok(productMatchesRule(noTags, { field: "tag", op: "not_equals", value: "sale" }));
+  const noVendor = product({ vendor: "" });
+  assert.ok(productMatchesRule(noVendor, { field: "vendor", op: "not_equals", value: "acme" }));
+});

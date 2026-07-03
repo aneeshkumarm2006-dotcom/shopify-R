@@ -26,8 +26,11 @@ const DEFAULT_RATE: ResolvedShippingRate = { id: "standard", label: "Standard", 
 
 /** Does this rate apply to the given shipping region? (No `regions` ⇒ everywhere.) */
 function appliesToRegion(rate: ShippingRate, region?: string): boolean {
-  if (!rate.regions || rate.regions.length === 0) return true;
-  return rate.regions.map(norm).includes(norm(region));
+  // Drop blank region entries first: a mis-entered `[""]` must not become "matches only
+  // a shopper with no region" — with no real regions left, the rate applies everywhere.
+  const regions = (rate.regions ?? []).map(norm).filter(Boolean);
+  if (regions.length === 0) return true;
+  return regions.includes(norm(region));
 }
 
 /** A rate's effective price: free once `freeOver` is met, otherwise its flat price. */
