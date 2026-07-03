@@ -95,7 +95,6 @@ export function CollectionsIndex({ collections }: { collections: Collection[] })
           query={query}
           onQueryChange={setQuery}
           searchPlaceholder="Search collections"
-          showSort={false}
         >
           {rows.length === 0 ? (
             <NoResultsState onClear={() => setQuery("")} />

@@ -43,7 +43,7 @@ export function ProductCard({
 
   const card = (
     <>
-      <div style={{ position: "relative" }}>
+      <div className="product-card-media" style={{ position: "relative" }}>
         <Media src={product.images[0]} alt={product.title} ratio="4 / 5" />
         {onSale && !soldOut && <Badge label="Sale" tone="lime" />}
         {soldOut && <Badge label="Sold out" tone="ink" />}
@@ -105,9 +105,9 @@ export function ProductCard({
 
   const style: React.CSSProperties = { display: "block", color: "inherit" };
 
-  if (preview) return <div style={style}>{card}</div>;
+  if (preview) return <div className="product-card" style={style}>{card}</div>;
   return (
-    <Link href={href(`/products/${product.handle}`)} style={style}>
+    <Link className="product-card" href={href(`/products/${product.handle}`)} style={style}>
       {card}
     </Link>
   );

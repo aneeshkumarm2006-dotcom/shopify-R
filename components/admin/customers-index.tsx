@@ -54,7 +54,6 @@ export function CustomersIndex({ customers }: { customers: Customer[] }) {
         query={query}
         onQueryChange={setQuery}
         searchPlaceholder="Search by name, email, or tag"
-        showSort={false}
       >
         {customers.length === 0 ? (
           <EmptyState

@@ -107,3 +107,39 @@
   line-height: 1.1;
   margin: 0;
 }
+
+/* ------------------------------------------------------------------ *
+ * Product card hover (Wave 1 storefront feel). A subtle image zoom +
+ * lift is the signature "this is a real store" cue. Gated behind
+ * hover-capable, fine pointers so a tap on mobile never sticks a hover
+ * state; reduced-motion users keep the layout, lose the movement.
+ * ------------------------------------------------------------------ */
+.product-card-media {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+.product-card-media :where(img) {
+  transition: transform 400ms var(--ease-emphasized);
+  will-change: transform;
+}
+.product-card {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .product-card:hover .product-card-media :where(img) {
+    transform: scale(1.04);
+  }
+  .product-card:hover {
+    transform: translateY(var(--lift-sm));
+  }
+}
+.product-card:active {
+  transform: scale(var(--press-scale));
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-card:hover,
+  .product-card:active,
+  .product-card:hover .product-card-media :where(img) {
+    transform: none;
+  }
+}

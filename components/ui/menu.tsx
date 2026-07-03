@@ -36,9 +36,16 @@ export function Dropdown({
    * lets the menu escape the `overflow: hidden`/`overflow: auto` of index-table
    * cards, which would otherwise clip a per-row menu (DESIGN §3.4/§3.6).
    */
-  const [pos, setPos] = useState<{ top: number; left: number; maxHeight?: number }>({
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    maxHeight?: number;
+    /** transform-origin for the open animation — the corner nearest the trigger. */
+    origin: string;
+  }>({
     top: 0,
     left: 0,
+    origin: "top center",
   });
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -77,15 +84,22 @@ export function Dropdown({
     const spaceAbove = rect.top - gap;
     let top: number;
     let maxHeight: number;
+    let placedBelow: boolean;
     if (menuH <= spaceBelow || spaceBelow >= spaceAbove) {
       top = rect.bottom + gap;
       maxHeight = vh - top - margin;
+      placedBelow = true;
     } else {
       maxHeight = spaceAbove - margin;
       top = Math.max(margin, rect.top - gap - Math.min(menuH, maxHeight));
+      placedBelow = false;
     }
 
-    setPos({ top, left, maxHeight: Math.max(0, maxHeight) });
+    // Origin = the corner nearest the trigger, so the menu scales OUT of it:
+    // vertical edge follows the flip (below → top edge, above → bottom edge),
+    // horizontal edge follows alignment.
+    const origin = `${placedBelow ? "top" : "bottom"} ${align === "right" ? "right" : "left"}`;
+    setPos({ top, left, maxHeight: Math.max(0, maxHeight), origin });
   }
 
   // Position before paint so the menu never flashes at the wrong spot.
@@ -165,6 +179,8 @@ export function Dropdown({
               width,
               maxHeight: pos.maxHeight,
               overflowY: "auto",
+              // Drives the origin-aware scale-in keyframe (see .menu in components.css).
+              ["--menu-origin" as string]: pos.origin,
             }}
           >
             {typeof children === "function"

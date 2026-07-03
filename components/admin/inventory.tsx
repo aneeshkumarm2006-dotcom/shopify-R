@@ -186,7 +186,6 @@ export function Inventory({
         ]}
         active={filter}
         onTabChange={setFilter}
-        showSort={false}
       >
         {rows.length === 0 ? (
           <EmptyState

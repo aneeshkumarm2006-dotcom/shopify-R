@@ -25,7 +25,14 @@
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     border-color var(--dur-fast) var(--ease-standard),
-    color var(--dur-fast) var(--ease-standard);
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+/* Tactile press — a small scale-down on every button confirms the click was heard.
+   Release snaps back fast (transform uses --dur-fast above). Disabled buttons stay flat. */
+.btn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
 }
 .btn:disabled {
   opacity: 0.5;
@@ -54,9 +61,14 @@
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  transform: translateY(var(--lift-md));
+  box-shadow: var(--shadow-hover);
 }
 .btn-primary:active:not(:disabled) {
   background: var(--accent-pressed);
+  /* Press wins over hover: settle back down + scale, no lingering shadow. */
+  transform: scale(var(--press-scale));
+  box-shadow: var(--shadow-xs);
 }
 
 .btn-default {
@@ -67,9 +79,13 @@
 .btn-default:hover:not(:disabled) {
   background: var(--surface-subtle);
   border-color: var(--warm-400);
+  transform: translateY(var(--lift-md));
+  box-shadow: var(--shadow-sm);
 }
 .btn-default:active:not(:disabled) {
   background: var(--surface-sunken);
+  transform: scale(var(--press-scale));
+  box-shadow: none;
 }
 
 .btn-ghost {
@@ -95,6 +111,12 @@
 }
 .btn-critical-solid:hover:not(:disabled) {
   background: color-mix(in oklab, var(--critical) 88%, black);
+  transform: translateY(var(--lift-md));
+  box-shadow: var(--shadow-hover);
+}
+.btn-critical-solid:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+  box-shadow: var(--shadow-xs);
 }
 
 .btn-pill {
@@ -130,11 +152,16 @@
   cursor: pointer;
   transition:
     background-color var(--dur-fast) var(--ease-standard),
-    color var(--dur-fast) var(--ease-standard);
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
 }
 .iconbtn:hover:not(:disabled) {
   background: var(--surface-sunken);
   color: var(--text-strong);
+}
+/* Tactile press feedback — same vocabulary as .btn. */
+.iconbtn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
 }
 .iconbtn:disabled {
   opacity: 0.5;
@@ -418,6 +445,24 @@
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
 }
+/* Opt-in: a CLICKABLE card (wraps a link/button). Static content cards must NOT
+   get this — only surfaces the user actually presses earn the lift affordance. */
+.card-interactive {
+  cursor: pointer;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.card-interactive:hover {
+  transform: translateY(var(--lift-md));
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-strong);
+}
+.card-interactive:active {
+  transform: translateY(0) scale(var(--press-scale));
+  box-shadow: var(--shadow-sm);
+}
 .card-pad {
   padding: var(--space-6);
 }
@@ -494,7 +539,7 @@
   border: none;
   cursor: pointer;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  transition: color var(--dur-fast);
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 .tab:hover {
   color: var(--text-strong);
@@ -511,6 +556,19 @@
   height: 2px;
   background: var(--text-strong);
   border-radius: 2px;
+  /* Underline grows in from the tab's center on activation — subtle spatial cue. */
+  transform-origin: center;
+  animation: tabUnderlineIn var(--dur-base) var(--ease-emphasized);
+}
+@keyframes tabUnderlineIn {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
 }
 .tab .count {
   font-family: var(--font-mono);
@@ -533,11 +591,20 @@
   border: var(--border-w) solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all var(--dur-fast);
+  /* Explicit properties (not `all`) so only intended things animate. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .viewtab:hover {
   background: var(--surface-sunken);
   color: var(--text-strong);
+}
+.viewtab:active {
+  transform: scale(var(--press-scale));
 }
 .viewtab.active {
   background: var(--surface);
@@ -592,6 +659,9 @@
 }
 .tbl tbody tr:hover {
   background: var(--surface-subtle);
+}
+.tbl tbody tr.is-clickable:active {
+  background: var(--surface-sunken);
 }
 .tbl tbody tr.is-selected {
   background: var(--accent-tint);
@@ -679,12 +749,16 @@
   min-width: 180px;
   /* Never wider than the viewport — the JS anchor clamps position, this clamps size. */
   max-width: calc(100vw - 16px);
-  animation: menuIn var(--dur-fast) var(--ease-out);
+  /* Origin-aware: scale-in FROM the corner nearest the trigger (set by menu.tsx as
+     --menu-origin), so the menu feels like it grows out of what you clicked. */
+  transform-origin: var(--menu-origin, top center);
+  animation: menuIn var(--dur-base) var(--ease-emphasized);
 }
 @keyframes menuIn {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    /* Start from scale(0.96) — never scale(0); the menu shouldn't pop from nothing. */
+    transform: scale(0.96) translateY(-2px);
   }
   to {
     opacity: 1;
@@ -765,7 +839,8 @@
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-xs);
-  transition: transform var(--dur-base) var(--ease-standard);
+  /* Knob slides with a gentle spring — the toggle's one playful affordance. */
+  transition: transform var(--dur-base) var(--ease-spring);
 }
 .switch.on {
   background: var(--accent);
@@ -875,7 +950,8 @@
     var(--surface-sunken) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.4s ease infinite;
+  /* Continuous sweep → linear, so the loop never stutters at its boundary. */
+  animation: shimmer 1.4s linear infinite;
   border-radius: var(--radius-sm);
 }
 
@@ -949,12 +1025,15 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  animation: modalIn var(--dur-base) var(--ease-out);
+  /* Modals are not anchored to a trigger → scale from center, gently up from below.
+     Emphasized decelerate = confident arrival, calm settle. */
+  transform-origin: center;
+  animation: modalIn var(--dur-slow) var(--ease-emphasized);
 }
 @keyframes modalIn {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(6px);
+    transform: scale(0.96) translateY(8px);
   }
   to {
     opacity: 1;
@@ -981,12 +1060,14 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  animation: sheetIn var(--dur-slow) var(--ease-out);
+  /* Full-width slide with the warm drawer easing — quick to start, soft to settle. */
+  animation: sheetIn var(--dur-slow) var(--ease-emphasized);
 }
 @keyframes sheetIn {
   from {
-    transform: translateX(24px);
-    opacity: 0.6;
+    /* Percentage travels by the panel's own width regardless of size. */
+    transform: translateX(100%);
+    opacity: 0.4;
   }
   to {
     transform: none;
@@ -1139,7 +1220,8 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  animation: modalIn var(--dur-base) var(--ease-out);
+  transform-origin: center;
+  animation: modalIn var(--dur-slow) var(--ease-emphasized);
 }
 .cmdk-input-row {
   display: flex;
@@ -1305,11 +1387,18 @@
   font-size: var(--text-sm);
   font-weight: 500;
   font-family: var(--font-ui);
-  transition: background-color var(--dur-fast) var(--ease-standard);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
 }
 .admin-nav-item:hover {
   background: var(--surface-sunken);
   color: var(--text-strong);
+}
+/* Touched constantly — a tiny press confirms the tap without ever feeling busy. */
+.admin-nav-item:active {
+  transform: scale(0.985);
 }
 .admin-nav-item.active {
   background: var(--accent-tint);
@@ -1325,6 +1414,19 @@
   width: 2px;
   border-radius: 2px;
   background: var(--accent-pressed);
+  transform-origin: center;
+  /* Accent bar grows in vertically when a nav item becomes active. */
+  animation: navMarkerIn var(--dur-base) var(--ease-emphasized);
+}
+@keyframes navMarkerIn {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 .admin-nav-item .nav-icon {
   color: var(--text-muted);
@@ -1411,13 +1513,18 @@
   cursor: pointer;
   text-align: left;
   color: var(--text);
-  transition: background-color var(--dur-fast);
+  transition: background-color var(--dur-fast) var(--ease-standard);
 }
 .list-row + .list-row {
   border-top: var(--border-w) solid var(--border);
 }
 .list-row:hover {
   background: var(--surface-subtle);
+}
+/* Press deepens the fill — a calm, full-width row reads better with a tone shift
+   than a transform (no layout jitter, no sibling-border seams). */
+.list-row:active {
+  background: var(--surface-sunken);
 }
 
 /* Stat card (dashboard) */

@@ -1,13 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Button, Icon, IconButton, ViewTabs, type TabItem } from "@/components/ui";
+import { Icon, ViewTabs, type TabItem } from "@/components/ui";
 
 /**
  * Index-list shell (DESIGN §3.4 / §4) — the bordered card that wraps every admin
- * index table: a toolbar (view-tab filters with counts · search · sort · columns)
- * over a horizontally-scrollable table area, with an optional footer slot for the
+ * index table: a toolbar (view-tab filters with counts · search) over a
+ * horizontally-scrollable table area, with an optional footer slot for the
  * bulk-action / pagination bar. Screens supply the `<table className="tbl">` body.
+ *
+ * NOTE: the sort + column-picker controls were removed until they're actually wired —
+ * a control that looks interactive but does nothing reads as broken.
  */
 export interface IndexShellProps {
   tabs: TabItem[];
@@ -18,7 +21,6 @@ export interface IndexShellProps {
   query?: string;
   onQueryChange?: (value: string) => void;
   searchPlaceholder?: string;
-  showSort?: boolean;
   /** Footer row (e.g. the bulk-action bar). */
   footer?: ReactNode;
   children: ReactNode;
@@ -32,7 +34,6 @@ export function IndexShell({
   query,
   onQueryChange,
   searchPlaceholder = "Search…",
-  showSort = true,
   footer,
   children,
 }: IndexShellProps) {
@@ -61,12 +62,6 @@ export function IndexShell({
               />
             </div>
           )}
-          {showSort && (
-            <Button size="sm" variant="default" icon="arrowUpDown">
-              Sort
-            </Button>
-          )}
-          <IconButton name="sliders" size={32} tip="Columns" aria-label="Edit columns" />
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>{children}</div>
