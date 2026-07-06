@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Media } from "./media";
 import type { Product } from "@/types";
@@ -34,11 +35,16 @@ export function ProductCard({
   const soldOut = !productInStock(product);
   const price = fromPrice(product);
 
+  const [added, setAdded] = useState(false);
   const add = (e: React.MouseEvent) => {
     e.preventDefault();
     if (soldOut) return;
     const v = defaultVariant(product);
-    if (v && sf) sf.addToCart(product, v, 1);
+    if (v && sf) {
+      sf.addToCart(product, v, 1);
+      setAdded(true);
+      window.setTimeout(() => setAdded(false), 1400);
+    }
   };
 
   const card = (
@@ -92,12 +98,13 @@ export function ProductCard({
           className="btn btn-sm btn-pill"
           aria-label={soldOut ? `${product.title} sold out` : `Add ${product.title} to cart`}
           style={{
-            background: soldOut ? "var(--surface-sunken)" : "var(--warm-900)",
+            background: soldOut ? "var(--surface-sunken)" : added ? "var(--success)" : "var(--warm-900)",
             color: soldOut ? "var(--text-muted)" : "var(--warm-50)",
             cursor: soldOut ? "not-allowed" : "pointer",
+            transition: "background var(--dur-base) var(--ease-out)",
           }}
         >
-          {soldOut ? "Sold out" : "Add"}
+          {soldOut ? "Sold out" : added ? "Added ✓" : "Add"}
         </button>
       </div>
     </>

@@ -40,6 +40,14 @@ export function ProductView({
   );
   const [qty, setQty] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
+  const [added, setAdded] = useState(false);
+
+  function addToCart() {
+    if (out || !variant) return;
+    sf?.addToCart(product, variant, qty);
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 1600);
+  }
 
   const variant = product.variants[vi] ?? product.variants[0];
   const stock = variant ? variantStock(variant) : "out";
@@ -203,18 +211,55 @@ export function ProductView({
             {!out && <Stepper value={qty} min={1} onChange={setQty} aria-label="Quantity" />}
             <button
               type="button"
-              onClick={() => !out && variant && sf?.addToCart(product, variant, qty)}
+              onClick={addToCart}
               disabled={out}
+              aria-live="polite"
               className="btn btn-lg btn-pill"
               style={{
                 flex: 1,
-                background: out ? "var(--surface-sunken)" : "var(--lime-400)",
-                color: out ? "var(--text-muted)" : "var(--warm-900)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                background: out ? "var(--surface-sunken)" : added ? "var(--success)" : "var(--lime-400)",
+                color: out ? "var(--text-muted)" : added ? "var(--warm-0)" : "var(--warm-900)",
                 fontWeight: 600,
                 cursor: out ? "not-allowed" : "pointer",
+                transition: "background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out)",
               }}
             >
-              {out ? "Sold out" : "Add to cart"}
+              {out ? (
+                "Sold out"
+              ) : added ? (
+                <>
+                  <Icon name="check" size={17} aria-hidden /> Added
+                </>
+              ) : (
+                "Add to cart"
+              )}
+            </button>
+          </div>
+
+          {/* Sticky mobile add-to-cart bar — keeps the CTA reachable on a long PDP.
+              Hidden on desktop (the buy box is always in view there). */}
+          <div className="pdp-sticky-bar" aria-hidden={out}>
+            <div className="pdp-sticky-info">
+              <span className="pdp-sticky-title">{product.title}</span>
+              <span className="mono pdp-sticky-price">{money(variant?.price ?? 0, currency)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={addToCart}
+              disabled={out}
+              className="btn btn-pill"
+              style={{
+                background: out ? "var(--surface-sunken)" : added ? "var(--success)" : "var(--lime-400)",
+                color: out ? "var(--text-muted)" : added ? "var(--warm-0)" : "var(--warm-900)",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {out ? "Sold out" : added ? "Added ✓" : "Add to cart"}
             </button>
           </div>
 

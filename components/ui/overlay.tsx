@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+/** Must cover the longest panel exit animation (modal/sheet run at --dur-slow = 260ms). */
+const EXIT_MS = 260;
 
 /**
  * Shared overlay shell for Modal / Sheet / CartSheet (DESIGN §3.7). Renders a
@@ -28,6 +31,24 @@ export function Overlay({
   children,
 }: OverlayProps) {
   const scrimRef = useRef<HTMLDivElement>(null);
+
+  // Keep the overlay mounted through its EXIT animation: when `open` flips false we
+  // switch to the "closed" phase (drives the exit keyframes) and only unmount after the
+  // animation finishes — so modals/sheets/cart drawer slide+fade OUT instead of vanishing.
+  const [rendered, setRendered] = useState(open);
+  const [phase, setPhase] = useState<"open" | "closed">(open ? "open" : "closed");
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      const id = requestAnimationFrame(() => setPhase("open"));
+      return () => cancelAnimationFrame(id);
+    }
+    // Closing: play the exit animation, then unmount.
+    setPhase("closed");
+    const t = setTimeout(() => setRendered(false), EXIT_MS);
+    return () => clearTimeout(t);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,11 +100,12 @@ export function Overlay({
     };
   }, [open, dismissable, onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (!rendered || typeof document === "undefined") return null;
 
   return createPortal(
     <div
       ref={scrimRef}
+      data-state={phase}
       className={placement === "right" ? "scrim scrim-right" : "scrim scrim-center"}
       onMouseDown={(e) => {
         if (dismissable && e.target === e.currentTarget) onClose();

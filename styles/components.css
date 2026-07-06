@@ -1602,3 +1602,45 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Overlay EXIT animations (Wave 4). The Overlay keeps its node mounted
+ * for one exit cycle and flips data-state to "closed"; these run the
+ * reverse of the entrance so modals/sheets/cart drawer leave gracefully
+ * instead of popping out of existence. Durations match EXIT_MS (260ms).
+ * ------------------------------------------------------------------ */
+.scrim[data-state="closed"] {
+  animation: scrimOut var(--dur-base) var(--ease-out) forwards;
+}
+.scrim[data-state="closed"] .modal,
+.scrim[data-state="closed"] .cmdk {
+  animation: modalOut var(--dur-slow) var(--ease-emphasized) forwards;
+}
+.scrim[data-state="closed"] .sheet {
+  animation: sheetOut var(--dur-slow) var(--ease-emphasized) forwards;
+}
+@keyframes scrimOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes modalOut {
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+}
+@keyframes sheetOut {
+  to {
+    transform: translateX(100%);
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrim[data-state="closed"],
+  .scrim[data-state="closed"] .modal,
+  .scrim[data-state="closed"] .cmdk,
+  .scrim[data-state="closed"] .sheet {
+    animation: scrimOut var(--dur-fast) linear forwards;
+  }
+}
