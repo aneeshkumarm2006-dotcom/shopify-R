@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { SettlementMethod, ShippingSettings, TaxSettings } from "@/types";
 import { Icon } from "@/components/ui/icon";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { availableShippingRates, type ResolvedShippingRate } from "@/lib/data/shipping";
@@ -16,6 +16,16 @@ import { applyDiscount, previewGiftCard, submitOrder } from "@/app/(store)/actio
 import { useStorefront, useStoreHref } from "./storefront-context";
 import { STORE_HOME } from "./shared";
 import { stashOrder } from "./order-handoff";
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** US state options for the address select (Shopify uses a region select, not free text). */
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
+  "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+  "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+  "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+];
 
 /** Which settlement methods the store offers — derived server-side from settings. */
 type SettlementFlags = Record<SettlementMethod, boolean>;
@@ -96,6 +106,7 @@ export function CheckoutView({
   const href = useStoreHref();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
   // Prefill contact from the signed-in shopper (Phase 3), if any.
   const [form, setForm] = useState(() => {
     const c = sf?.customer;
@@ -137,8 +148,38 @@ export function CheckoutView({
 
   if (!sf) return null;
   const { cart, subtotal, currency } = sf;
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set =
+    (k: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+      // Clear a field's error as soon as the shopper starts correcting it.
+      if (fieldErrors[k]) setFieldErrors((fe) => ({ ...fe, [k]: undefined }));
+    };
+
+  /** Per-field validation; null = valid. Phone is optional. */
+  function fieldError(k: string, raw: string): string | null {
+    const v = raw.trim();
+    switch (k) {
+      case "email":
+        return !v ? "Enter your email." : !EMAIL_RE.test(v) ? "Enter a valid email address." : null;
+      case "firstName":
+        return !v ? "Enter your first name." : null;
+      case "lastName":
+        return !v ? "Enter your last name." : null;
+      case "address":
+        return !v ? "Enter your street address." : null;
+      case "city":
+        return !v ? "Enter your city." : null;
+      case "state":
+        return !v ? "Select your state." : null;
+      case "zip":
+        return !v ? "Enter your ZIP code." : !/^\d{5}(-\d{4})?$/.test(v) ? "Enter a valid ZIP." : null;
+      default:
+        return null;
+    }
+  }
+  const onBlurField = (k: keyof typeof form) => () =>
+    setFieldErrors((fe) => ({ ...fe, [k]: fieldError(k, form[k]) ?? undefined }));
 
   // If the cart changed under an applied code, the stale amount can exceed subtotal;
   // clamp the display so the total never goes negative (server re-validates anyway).
@@ -232,6 +273,23 @@ export function CheckoutView({
   const placeOrder = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    // Inline-validate every required field; block + focus the first invalid one.
+    const REQUIRED = ["email", "firstName", "lastName", "address", "city", "state", "zip"] as const;
+    const errs: Record<string, string> = {};
+    for (const k of REQUIRED) {
+      const msg = fieldError(k, form[k]);
+      if (msg) errs[k] = msg;
+    }
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      const first = REQUIRED.find((k) => errs[k]);
+      if (first) {
+        const el = document.querySelector<HTMLElement>(`[name="checkout-${first}"]`);
+        el?.focus();
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
     const items = cart.map((l) => ({
       title: l.title,
       variant: l.variant,
@@ -310,49 +368,62 @@ export function CheckoutView({
             Checkout
           </h1>
 
-          <Field label="Email">
+          <Field label="Email" error={fieldErrors.email}>
             <Input
+              name="checkout-email"
               type="email"
               large
-              required
               placeholder="you@email.com"
               autoComplete="email"
               value={form.email}
               onChange={set("email")}
+              onBlur={onBlurField("email")}
+              error={Boolean(fieldErrors.email)}
             />
           </Field>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}>
-            <Field label="First name">
-              <Input large required autoComplete="given-name" value={form.firstName} onChange={set("firstName")} />
+            <Field label="First name" error={fieldErrors.firstName}>
+              <Input name="checkout-firstName" large autoComplete="given-name" value={form.firstName} onChange={set("firstName")} onBlur={onBlurField("firstName")} error={Boolean(fieldErrors.firstName)} />
             </Field>
-            <Field label="Last name">
-              <Input large required autoComplete="family-name" value={form.lastName} onChange={set("lastName")} />
+            <Field label="Last name" error={fieldErrors.lastName}>
+              <Input name="checkout-lastName" large autoComplete="family-name" value={form.lastName} onChange={set("lastName")} onBlur={onBlurField("lastName")} error={Boolean(fieldErrors.lastName)} />
             </Field>
           </div>
 
           <div style={{ marginTop: 16 }}>
-            <Field label="Address">
+            <Field label="Address" error={fieldErrors.address}>
               <Input
+                name="checkout-address"
                 large
-                required
                 placeholder="Street address"
                 autoComplete="street-address"
                 value={form.address}
                 onChange={set("address")}
+                onBlur={onBlurField("address")}
+                error={Boolean(fieldErrors.address)}
               />
             </Field>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 14, marginTop: 16 }}>
-            <Field label="City">
-              <Input large required autoComplete="address-level2" value={form.city} onChange={set("city")} />
+            <Field label="City" error={fieldErrors.city}>
+              <Input name="checkout-city" large autoComplete="address-level2" value={form.city} onChange={set("city")} onBlur={onBlurField("city")} error={Boolean(fieldErrors.city)} />
             </Field>
-            <Field label="State">
-              <Input large required autoComplete="address-level1" value={form.state} onChange={set("state")} />
+            <Field label="State" error={fieldErrors.state}>
+              <Select
+                name="checkout-state"
+                large
+                options={US_STATES}
+                autoComplete="address-level1"
+                value={form.state}
+                onChange={set("state")}
+                onBlur={onBlurField("state")}
+                error={Boolean(fieldErrors.state)}
+              />
             </Field>
-            <Field label="ZIP">
-              <Input large required mono autoComplete="postal-code" value={form.zip} onChange={set("zip")} />
+            <Field label="ZIP" error={fieldErrors.zip}>
+              <Input name="checkout-zip" large mono autoComplete="postal-code" value={form.zip} onChange={set("zip")} onBlur={onBlurField("zip")} error={Boolean(fieldErrors.zip)} />
             </Field>
           </div>
 
