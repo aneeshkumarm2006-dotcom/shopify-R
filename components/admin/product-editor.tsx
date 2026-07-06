@@ -31,6 +31,8 @@ import {
   Select,
   Switch,
   useToast,
+  useConfirm,
+  useUnsavedChanges,
 } from "@/components/ui";
 import { productStatusPill } from "@/components/admin/shared";
 import { storeDomain } from "@/lib/format";
@@ -170,6 +172,32 @@ export function ProductEditor({
   );
 
   const mark = () => setDirty(true);
+  const confirm = useConfirm();
+  // Block navigation (browser + in-app links) while there are unsaved edits.
+  useUnsavedChanges(dirty);
+
+  /** Revert every field to its last-saved value — a real discard (router.refresh alone
+   * leaves the client state edited while the save bar disappears, falsely "clean"). */
+  function resetFields() {
+    setTitle(product?.title ?? "");
+    setDescription(product?.description ?? "");
+    setStatus(product?.status ?? "draft");
+    setHandle(product?.handle ?? "");
+    setHandleEdited(!isNew);
+    setImages(product?.images ?? []);
+    setOptions(product?.options ?? []);
+    setVariants(toEditable(product));
+    setSelectedCollections(memberOf);
+    setSeoOpen(false);
+    setSeoTitle(product?.seo.title ?? "");
+    setSeoDesc(product?.seo.description ?? "");
+    setProductType(product?.productType ?? "");
+    setVendor(product?.vendor ?? "");
+    setTags(product?.tags ?? []);
+    setTagDraft("");
+    setAttributes(product?.attributes ?? []);
+  }
+
   const statusPill = productStatusPill(status);
   const previewBase = `${storeDomain(storeSubdomain)}/products/`;
   const hasOptions = options.length > 0;
@@ -324,9 +352,13 @@ export function ProductEditor({
     });
   }
   function discard() {
-    if (isNew) router.push("/products");
-    else router.refresh();
     setDirty(false);
+    if (isNew) {
+      router.push("/products");
+      return;
+    }
+    resetFields(); // actually revert the fields, then re-sync server data
+    router.refresh();
   }
   function duplicate(close: () => void) {
     if (!product) return;
@@ -341,11 +373,18 @@ export function ProductEditor({
       router.push("/products");
     });
   }
-  function destroy(close?: () => void) {
+  async function destroy(close?: () => void) {
     if (!product) return;
+    close?.(); // close the menu before the confirm dialog opens
+    const ok = await confirm({
+      title: "Delete product?",
+      message: `“${product.title}” will be permanently deleted. This can’t be undone.`,
+      confirmLabel: "Delete product",
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       await removeProduct(product._id);
-      close?.();
       toast("Product deleted");
       router.push("/products");
     });

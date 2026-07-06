@@ -13,6 +13,7 @@ import {
   NoResultsState,
   PageHeader,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { IndexShell } from "@/components/admin/index-shell";
 import { removeCollection } from "@/app/(admin)/collections/actions";
@@ -26,6 +27,7 @@ import { removeCollection } from "@/app/(admin)/collections/actions";
 export function CollectionsIndex({ collections }: { collections: Collection[] }) {
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState("");
 
@@ -37,10 +39,22 @@ export function CollectionsIndex({ collections }: { collections: Collection[] })
     );
   }, [collections, query]);
 
-  function destroy(id: string, close: () => void) {
+  async function destroy(id: string, close: () => void) {
+    close();
+    const c = collections.find((x) => x._id === id);
+    const ok = await confirm({
+      title: "Delete collection?",
+      message: `${c ? `“${c.title}”` : "This collection"} will be deleted. Products in it are not deleted.`,
+      confirmLabel: "Delete collection",
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
-      await removeCollection(id);
-      close();
+      const res = await removeCollection(id);
+      if (!res.ok) {
+        toast("Couldn't delete the collection", { tone: "critical" });
+        return;
+      }
       toast("Collection deleted");
       router.refresh();
     });

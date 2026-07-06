@@ -20,6 +20,7 @@ import {
   Select,
   Switch,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import {
   createDiscountAction,
@@ -98,6 +99,7 @@ export function Discounts({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
 
   const [open, setOpen] = useState(false);
@@ -176,10 +178,18 @@ export function Discounts({
     });
   }
 
-  function destroy(id: string, close: () => void) {
+  async function destroy(id: string, close: () => void) {
+    close();
+    const d = discounts.find((x) => x._id === id);
+    const ok = await confirm({
+      title: "Delete discount?",
+      message: `${d ? `Code “${d.code}”` : "This discount"} will be permanently deleted. This can’t be undone.`,
+      confirmLabel: "Delete discount",
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteDiscountAction(id);
-      close();
       if (res.ok) {
         toast("Discount deleted");
         router.refresh();

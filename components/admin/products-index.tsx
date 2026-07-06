@@ -28,6 +28,7 @@ import {
   Pill,
   Thumb,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { IndexShell } from "@/components/admin/index-shell";
 import {
@@ -45,7 +46,8 @@ import {
 export function ProductsIndex({ products }: { products: Product[] }) {
   const router = useRouter();
   const toast = useToast();
-  const [, startTransition] = useTransition();
+  const confirm = useConfirm();
+  const [pending, startTransition] = useTransition();
   const [tab, setTab] = useState("All");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -83,9 +85,18 @@ export function ProductsIndex({ products }: { products: Product[] }) {
   function toggleRow(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
-  function bulk(action: "active" | "draft" | "delete") {
+  async function bulk(action: "active" | "draft" | "delete") {
     const ids = selected;
     const noun = `${ids.length} product${ids.length === 1 ? "" : "s"}`;
+    if (action === "delete") {
+      const ok = await confirm({
+        title: `Delete ${noun}?`,
+        message: `${noun} will be permanently deleted. This can’t be undone.`,
+        confirmLabel: `Delete ${noun}`,
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     startTransition(async () => {
       if (action === "delete") {
         await bulkDeleteAction(ids);
@@ -156,10 +167,18 @@ export function ProductsIndex({ products }: { products: Product[] }) {
     });
   }
 
-  function destroy(id: string, close: () => void) {
+  async function destroy(id: string, close: () => void) {
+    close();
+    const product = products.find((p) => p._id === id);
+    const ok = await confirm({
+      title: "Delete product?",
+      message: `${product ? `“${product.title}”` : "This product"} will be permanently deleted. This can’t be undone.`,
+      confirmLabel: "Delete product",
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       await removeProduct(id);
-      close();
       toast("Product deleted");
       router.refresh();
     });
@@ -170,16 +189,16 @@ export function ProductsIndex({ products }: { products: Product[] }) {
       <span>
         <span className="count">{selected.length}</span> selected
       </span>
-      <Button size="sm" variant="default" onClick={() => bulk("active")}>
+      <Button size="sm" variant="default" disabled={pending} onClick={() => bulk("active")}>
         Set active
       </Button>
-      <Button size="sm" variant="default" onClick={() => bulk("draft")}>
+      <Button size="sm" variant="default" disabled={pending} onClick={() => bulk("draft")}>
         Set draft
       </Button>
-      <Button size="sm" variant="default" onClick={() => setBulkEditOpen(true)}>
+      <Button size="sm" variant="default" disabled={pending} onClick={() => setBulkEditOpen(true)}>
         Edit
       </Button>
-      <Button size="sm" variant="critical" onClick={() => bulk("delete")}>
+      <Button size="sm" variant="critical" disabled={pending} onClick={() => bulk("delete")}>
         Delete
       </Button>
       <span className="spacer" />

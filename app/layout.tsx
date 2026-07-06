@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider, themeInitScript } from "@/components/theme-provider";
 import { NavigationProgress } from "@/components/ui/navigation-progress";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { fontDisplay, fontMono, fontUi } from "./fonts";
 import "./globals.css";
 
@@ -29,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <NavigationProgress />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

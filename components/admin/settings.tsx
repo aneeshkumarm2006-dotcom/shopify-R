@@ -19,6 +19,7 @@ import {
   Switch,
   Textarea,
   useToast,
+  useUnsavedChanges,
 } from "@/components/ui";
 import { storeStatusPill } from "@/components/admin/shared";
 import { storeDomain, CURRENCIES } from "@/lib/format";
@@ -123,6 +124,33 @@ export function Settings({
   // Age gate
   const [ageOn, setAgeOn] = useState(store.ageGate.enabled);
   const [ageMessage, setAgeMessage] = useState(store.ageGate.message);
+
+  // Block navigation while there are unsaved settings edits.
+  useUnsavedChanges(dirty);
+
+  /** Revert every field to its saved value — a real discard (router.refresh alone
+   * leaves the edited client state in place while the save bar disappears). */
+  function resetFields() {
+    setName(store.name);
+    setContactEmail(store.settings.contactEmail);
+    setCurrency(store.settings.currency);
+    setCurrencyCode(store.settings.currencyCode ?? "");
+    setLogo(store.settings.logoUrl ? [store.settings.logoUrl] : []);
+    setTaxEnabled(tax?.enabled ?? false);
+    setTaxLabelV(tax?.label ?? "Sales tax");
+    setTaxRate(String(tax?.rate ?? 0));
+    setTaxOnShipping(tax?.appliesToShipping ?? false);
+    setShipEnabled(store.settings.shipping?.enabled ?? false);
+    setRateDrafts(ratesToDrafts(store.settings.shipping?.rates));
+    setSeoTitle(store.seoDefaults.title);
+    setSeoDesc(store.seoDefaults.description);
+    setCode(store.codeInjection);
+    setPayOnline(settlement?.online ?? true);
+    setPayCod(settlement?.cod ?? false);
+    setPayInStore(settlement?.inStore ?? false);
+    setAgeOn(store.ageGate.enabled);
+    setAgeMessage(store.ageGate.message);
+  }
 
   const [unpublishOpen, setUnpublishOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -942,6 +970,7 @@ export function Settings({
             disabled={pending}
             onClick={() => {
               setDirty(false);
+              resetFields();
               router.refresh();
             }}
           >

@@ -64,6 +64,8 @@ export {
 export { Tooltip } from "./tooltip";
 export { Overlay, type OverlayProps } from "./overlay";
 export { Modal, type ModalProps } from "./modal";
+export { ConfirmProvider, useConfirm, type ConfirmOptions } from "./confirm";
+export { useUnsavedChanges } from "./use-unsaved-changes";
 export { Sheet, type SheetProps } from "./sheet";
 export { CartSheet, type CartSheetProps, type CartLine } from "./cart-sheet";
 

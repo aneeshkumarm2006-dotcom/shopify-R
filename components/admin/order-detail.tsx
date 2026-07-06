@@ -19,6 +19,7 @@ import {
   Stepper,
   Thumb,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { fulfillmentPill, paymentPill } from "@/components/admin/shared";
 import { fulfillOrder, setOrderStatus, addOrderNoteAction } from "@/app/(admin)/orders/actions";
@@ -73,6 +74,7 @@ export function OrderDetail({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
   const [, startTransition] = useTransition();
   const [payment, setPayment] = useState<PaymentStatus>(order.paymentStatus);
   const [fulfillment, setFulfillment] = useState<FulfillmentStatus>(
@@ -206,9 +208,15 @@ export function OrderDetail({
                     Paid
                   </MenuItem>
                   <MenuItem
-                    onClick={() => {
-                      changePayment("refunded", "Payment refunded");
+                    onClick={async () => {
                       close();
+                      const ok = await confirm({
+                        title: "Mark payment refunded?",
+                        message: "This records the order as refunded. Make sure the refund has actually been issued to the customer.",
+                        confirmLabel: "Mark refunded",
+                        destructive: true,
+                      });
+                      if (ok) changePayment("refunded", "Payment refunded");
                     }}
                   >
                     Refunded
@@ -250,9 +258,16 @@ export function OrderDetail({
                     Mark unfulfilled
                   </MenuItem>
                   <MenuItem
-                    onClick={() => {
-                      changeFulfillment("cancelled", "Order cancelled");
+                    onClick={async () => {
                       close();
+                      const ok = await confirm({
+                        title: "Cancel this order?",
+                        message: "Cancelling marks the order as cancelled. This can’t be undone.",
+                        confirmLabel: "Cancel order",
+                        cancelLabel: "Keep order",
+                        destructive: true,
+                      });
+                      if (ok) changeFulfillment("cancelled", "Order cancelled");
                     }}
                   >
                     Cancel order

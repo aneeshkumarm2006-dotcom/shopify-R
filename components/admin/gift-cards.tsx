@@ -12,6 +12,7 @@ import {
   PageHeader,
   Pill,
   useToast,
+  useConfirm,
 } from "@/components/ui";
 import { money, fmtDate } from "@/lib/format";
 import { issueGiftCard, toggleGiftCardStatus } from "@/app/(admin)/gift-cards/actions";
@@ -24,13 +25,28 @@ import { issueGiftCard, toggleGiftCardStatus } from "@/app/(admin)/gift-cards/ac
 export function GiftCardsAdmin({ cards, currency }: { cards: GiftCard[]; currency: string }) {
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
   const [, startTransition] = useTransition();
   const [issuing, setIssuing] = useState(false);
 
-  function toggle(card: GiftCard) {
+  async function toggle(card: GiftCard) {
     const next = card.status === "active" ? "disabled" : "active";
+    // Disabling blocks a customer's remaining stored balance — confirm it.
+    if (next === "disabled") {
+      const ok = await confirm({
+        title: "Disable gift card?",
+        message: `${card.code} has ${money(card.balance, currency)} remaining. Disabling blocks any further redemption until you re-enable it.`,
+        confirmLabel: "Disable card",
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     startTransition(async () => {
-      await toggleGiftCardStatus(card._id, next);
+      const res = await toggleGiftCardStatus(card._id, next);
+      if (!res.ok) {
+        toast("Couldn't update the gift card", { tone: "critical" });
+        return;
+      }
       toast(next === "active" ? "Gift card enabled" : "Gift card disabled");
       router.refresh();
     });

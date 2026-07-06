@@ -23,6 +23,8 @@ import {
   PageHeader,
   Thumb,
   useToast,
+  useConfirm,
+  useUnsavedChanges,
   slugify,
 } from "@/components/ui";
 import { storeDomain } from "@/lib/format";
@@ -76,6 +78,20 @@ export function CollectionEditor({
   }
 
   const mark = () => setDirty(true);
+  const confirm = useConfirm();
+  useUnsavedChanges(dirty);
+
+  function resetFields() {
+    setTitle(collection?.title ?? "");
+    setHandle(collection?.handle ?? "");
+    setHandleEdited(!isNew);
+    setSelected(collection?.productIds ?? []);
+    setQuery("");
+    setKind(collection?.kind ?? "manual");
+    setMatch(collection?.rules?.match ?? "all");
+    setConditions(collection?.rules?.conditions ?? [{ field: "tag", op: "equals", value: "" }]);
+  }
+
   const previewBase = `${storeDomain(storeSubdomain)}/collections/`;
 
   function onTitle(v: string) {
@@ -130,15 +146,30 @@ export function CollectionEditor({
     });
   }
   function discard() {
-    if (isNew) router.push("/collections");
-    else router.refresh();
     setDirty(false);
+    if (isNew) {
+      router.push("/collections");
+      return;
+    }
+    resetFields();
+    router.refresh();
   }
-  function destroy(close: () => void) {
+  async function destroy(close: () => void) {
     if (!collection) return;
+    close();
+    const ok = await confirm({
+      title: "Delete collection?",
+      message: `“${collection.title}” will be deleted. Products in it are not deleted.`,
+      confirmLabel: "Delete collection",
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
-      await removeCollection(collection._id);
-      close();
+      const res = await removeCollection(collection._id);
+      if (!res.ok) {
+        toast("Couldn't delete the collection", { tone: "critical" });
+        return;
+      }
       toast("Collection deleted");
       router.push("/collections");
     });

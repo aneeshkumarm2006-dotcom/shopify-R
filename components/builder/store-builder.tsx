@@ -10,7 +10,7 @@ import type {
   TemplateKey,
   ThemeConfig,
 } from "@/types";
-import { Icon, Modal, Button, ToastProvider, useToast } from "@/components/ui";
+import { Icon, Modal, Button, ToastProvider, useToast, useUnsavedChanges } from "@/components/ui";
 import { StoreRenderer } from "@/components/sections";
 import type { ThemeVersion } from "@/types";
 import {
@@ -155,13 +155,23 @@ function BuilderInner({
     saveTimer.current = setTimeout(() => void persist("auto"), 900);
   }, [persist]);
 
-  /* Flush any pending autosave on unmount so a quick edit-then-leave isn't lost. */
+  /* Flush any pending autosave on unmount so a quick edit-then-leave isn't lost. The
+   * old cleanup only cleared the timer (silently dropping the edit); now it actually
+   * fires the pending save. On an in-app Exit/Publish (router.push) the app stays alive,
+   * so the server action completes. */
   useEffect(
     () => () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        void persist("auto");
+      }
     },
-    [],
+    [persist],
   );
+
+  // Native "leave without saving?" prompt on refresh/close while a save is pending.
+  useUnsavedChanges(saveState !== "saved");
 
   /* ----------------------------------------------- selection resolution ---- */
   const selected: Section | null = useMemo(() => {
