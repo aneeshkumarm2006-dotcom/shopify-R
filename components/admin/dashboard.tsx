@@ -17,6 +17,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { paymentPill } from "@/components/admin/shared";
+import { SetupGuide } from "@/components/admin/setup-guide";
 import { PublishDialog } from "@/components/admin/publish-dialog";
 import { publishStoreAction } from "@/app/(admin)/publish/actions";
 import { money, storeDomain, storeOrigin } from "@/lib/format";
@@ -108,59 +109,11 @@ export function Dashboard({
         }
       />
 
-      {/* Publish nudge (draft) or live banner */}
-      {status === "draft" ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-4)",
-            padding: "var(--space-4) var(--space-5)",
-            background: "var(--accent-tint)",
-            border: "1px solid color-mix(in oklab, var(--accent) 40%, var(--border))",
-            borderRadius: "var(--radius-lg)",
-            marginBottom: "var(--space-6)",
-          }}
-        >
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: "var(--radius-md)",
-              background: "var(--accent)",
-              display: "grid",
-              placeItems: "center",
-              color: "var(--text-on-accent)",
-              flexShrink: 0,
-            }}
-          >
-            <Icon name="leaf" size={18} aria-hidden />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontWeight: 600,
-                color: "var(--text-strong)",
-                fontSize: "var(--text-sm)",
-              }}
-            >
-              Your store isn’t live yet
-            </div>
-            <div style={{ fontSize: "var(--text-xs)", color: "var(--warm-700)" }}>
-              Subdomain claimed · {activeProductCount} active product
-              {activeProductCount === 1 ? "" : "s"} · Age gate on
-            </div>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            icon="sparkle"
-            onClick={() => setPublishOpen(true)}
-          >
-            Publish
-          </Button>
-        </div>
-      ) : (
+      {/* Shopify-style guided setup checklist — self-hides once every step is done. */}
+      <SetupGuide store={store} activeProductCount={activeProductCount} />
+
+      {/* Live banner (draft state is covered by the setup guide above) */}
+      {status !== "draft" && (
         <div
           style={{
             display: "flex",

@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useId, useState } from "react";
-import { Button, Icon, Input, type InputProps } from "@/components/ui";
+import { useFormStatus } from "react-dom";
+import { Button, Icon, Input, Spinner, type InputProps } from "@/components/ui";
 import {
   signInCredentials,
   signUpCredentials,
@@ -161,10 +162,7 @@ export function SignIn({ initialMode = "signin" }: { initialMode?: "signin" | "s
 
         {/* Google OAuth */}
         <form action={signInGoogle}>
-          <button type="submit" className="btn btn-lg btn-default btn-block" style={{ gap: 10 }}>
-            <Icon name="google" size={18} aria-hidden />
-            Continue with Google
-          </button>
+          <GoogleButton />
         </form>
 
         {/* Mode toggle */}
@@ -277,5 +275,26 @@ function Field({
       </label>
       {children}
     </div>
+  );
+}
+
+/**
+ * Google submit button with a pending state. `useFormStatus` reads the parent form's
+ * in-flight status, so the button disables + shows a spinner the instant it's clicked
+ * (previously it gave no feedback until the OAuth redirect fired).
+ */
+function GoogleButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      className="btn btn-lg btn-default btn-block"
+      style={{ gap: 10 }}
+      disabled={pending}
+      aria-busy={pending}
+    >
+      {pending ? <Spinner size={16} /> : <Icon name="google" size={18} aria-hidden />}
+      {pending ? "Connecting…" : "Continue with Google"}
+    </button>
   );
 }

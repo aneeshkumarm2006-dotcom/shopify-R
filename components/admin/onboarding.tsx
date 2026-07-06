@@ -40,12 +40,20 @@ const REASON_COPY: Record<NonNullable<SubdomainCheck["reason"]>, string> = {
 
 export function Onboarding() {
   const router = useRouter();
-  const [step, setStep] = useState<"address" | "template">("address");
+  const [step, setStep] = useState<"address" | "template" | "done">("address");
   const [value, setValue] = useState("");
   const [state, setState] = useState<CheckState>({ kind: "idle" });
   const [template, setTemplate] = useState<StoreTemplateId | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [claimedSub, setClaimedSub] = useState("");
   const token = useRef(0);
+
+  // After the celebratory success step, glide the merchant into their dashboard.
+  useEffect(() => {
+    if (step !== "done") return;
+    const t = setTimeout(() => router.push("/dashboard"), 2600);
+    return () => clearTimeout(t);
+  }, [step, router]);
 
   useEffect(() => {
     const v = value.trim();
@@ -72,8 +80,11 @@ export function Onboarding() {
     setClaiming(true);
     const result = await claimSubdomain(value.trim(), template);
     if (result.ok) {
-      router.push("/dashboard");
-      return; // keep the spinner up through navigation
+      // Mark the emotional peak of the funnel with a real success beat before the
+      // dashboard, instead of a silent hard navigation.
+      setClaimedSub(value.trim());
+      setStep("done");
+      return;
     }
     // Almost always a subdomain race lost since the live check — surface it
     // back on the address step where the error copy makes sense.
@@ -84,6 +95,61 @@ export function Onboarding() {
 
   const isError = state.kind === "error";
   const preview = (value || "your-store") + "." + APP_DOMAIN;
+
+  /* --------------------------------------------------------- success · done */
+  if (step === "done") {
+    return (
+      <AuthFrame>
+        <div
+          className="card"
+          style={{ padding: "var(--space-8)", textAlign: "center" }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="onboarding-celebrate" style={{ margin: "0 auto var(--space-5)" }}>
+            <Icon name="check" size={34} aria-hidden />
+          </div>
+          <h1
+            style={{
+              fontSize: "var(--text-2xl)",
+              fontWeight: 700,
+              color: "var(--text-strong)",
+              letterSpacing: "-0.02em",
+              margin: "0 0 8px",
+            }}
+          >
+            Your store is ready 🎉
+          </h1>
+          <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", margin: "0 0 4px" }}>
+            You claimed
+          </p>
+          <p
+            className="mono"
+            style={{
+              fontSize: "var(--text-base)",
+              fontWeight: 600,
+              color: "var(--text-strong)",
+              margin: "0 0 var(--space-6)",
+            }}
+          >
+            {claimedSub}.{APP_DOMAIN}
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            block
+            iconRight="arrowRight"
+            onClick={() => router.push("/dashboard")}
+          >
+            Go to your dashboard
+          </Button>
+          <p style={{ fontSize: "var(--text-2xs)", color: "var(--text-muted)", marginTop: "var(--space-4)" }}>
+            Taking you there…
+          </p>
+        </div>
+      </AuthFrame>
+    );
+  }
 
   /* ------------------------------------------------------ step 2 · template */
   if (step === "template") {

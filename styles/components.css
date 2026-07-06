@@ -1573,3 +1573,32 @@
   padding-left: 30px;
   font-size: var(--text-sm);
 }
+
+/* Onboarding success beat — a checkmark badge that pops in with a soft overshoot.
+   The emotional peak of store creation; reduced-motion users get it without the scale. */
+.onboarding-celebrate {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-on-accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 8px var(--accent-tint);
+  animation: celebratePop 520ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1)) both;
+}
+@keyframes celebratePop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-celebrate {
+    animation: none;
+  }
+}
