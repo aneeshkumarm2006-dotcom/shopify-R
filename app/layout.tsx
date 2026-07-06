@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ThemeProvider, themeInitScript } from "@/components/theme-provider";
+import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { fontDisplay, fontMono, fontUi } from "./fonts";
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
+        <NavigationProgress />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

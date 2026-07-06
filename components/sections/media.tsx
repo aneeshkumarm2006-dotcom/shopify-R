@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Icon, type IconName } from "@/components/ui/icon";
 
 /**
@@ -5,6 +6,11 @@ import { Icon, type IconName } from "@/components/ui/icon";
  * shows a neutral `--surface-sunken` panel + icon when no image is set, so a store
  * with no photography uploaded yet never looks broken. Unlike the admin `Thumb`
  * (fixed px), this fills its container — the shape product/section grids need.
+ *
+ * Images go through `next/image` (Cloudinary is allowlisted in next.config): lazy by
+ * default, responsive `srcset` via `sizes`, and AVIF/WebP negotiation — so a phone
+ * never downloads a desktop-size original. Pass `priority` for an above-the-fold hero
+ * (e.g. the PDP main image) to opt out of lazy-loading.
  */
 export function Media({
   src,
@@ -14,6 +20,8 @@ export function Media({
   icon = "image",
   iconSize = 30,
   fill,
+  sizes = "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 400px",
+  priority = false,
 }: {
   src?: string | null;
   alt?: string;
@@ -23,10 +31,15 @@ export function Media({
   iconSize?: number;
   /** Stretch to the parent's height instead of using the aspect ratio. */
   fill?: boolean;
+  /** Responsive-image hint; tune per context (grid vs PDP). */
+  sizes?: string;
+  /** Skip lazy-loading for an above-the-fold image. */
+  priority?: boolean;
 }) {
   return (
     <div
       style={{
+        position: "relative",
         width: "100%",
         height: fill ? "100%" : undefined,
         aspectRatio: fill ? undefined : ratio,
@@ -40,11 +53,13 @@ export function Media({
       }}
     >
       {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <Image
           src={src}
           alt={alt}
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          fill
+          sizes={sizes}
+          priority={priority}
+          style={{ objectFit: "cover" }}
         />
       ) : (
         <Icon name={icon} size={iconSize} aria-hidden />
