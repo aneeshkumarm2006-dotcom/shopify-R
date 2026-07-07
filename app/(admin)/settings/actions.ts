@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { SubscriptionPlan } from "@/types";
-import { updateStore, setSubscriptionPlan, recordEvent, type StoreUpdate } from "@/lib/data";
+import { updateStore, setSubscriptionPlan, recordEvent, getStore, deleteStore, type StoreUpdate } from "@/lib/data";
 import { requirePermission, assertNotImpersonating, getActorUserId } from "@/lib/auth";
 
 /**
@@ -60,6 +60,44 @@ export async function setPlanAction(plan: SubscriptionPlan): Promise<{ ok: boole
     metadata: { plan },
   });
   revalidatePath("/settings");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/**
+ * Permanently delete the signed-in merchant's store and all of its data. Guarded
+ * three ways: `requirePermission("settings")` resolves (and scopes to) the caller's
+ * own store; `assertNotImpersonating()` blocks platform operators from deleting a
+ * merchant's store while impersonating; and it is OWNER-ONLY — staff/admin members
+ * with settings access cannot delete the store. Finally, `confirmName` must exactly
+ * match the store name (the UI's type-to-confirm), so it can't fire by accident.
+ */
+export async function deleteStoreAction(
+  confirmName: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const storeId = await requirePermission("settings");
+  try {
+    await assertNotImpersonating();
+  } catch {
+    return { ok: false, error: "Not available while impersonating a store." };
+  }
+  const store = await getStore(storeId);
+  if (!store) return { ok: false, error: "Store not found." };
+  const actorUserId = await getActorUserId();
+  if (!actorUserId || store.ownerId !== actorUserId) {
+    return { ok: false, error: "Only the store owner can delete this store." };
+  }
+  if (confirmName.trim() !== store.name) {
+    return { ok: false, error: "The name you typed doesn't match the store name." };
+  }
+  // Record the intent on the append-only audit log BEFORE the store row is gone.
+  await recordEvent({
+    type: "store.deleted",
+    storeId,
+    actorUserId,
+    target: { kind: "store", id: storeId, label: store.name },
+  });
+  await deleteStore(storeId);
   revalidatePath("/", "layout");
   return { ok: true };
 }

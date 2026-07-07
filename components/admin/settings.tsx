@@ -4,7 +4,7 @@ import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Store, Subscription, SubscriptionPlan } from "@/types";
-import { saveStoreSettings, setPlanAction } from "@/app/(admin)/settings/actions";
+import { saveStoreSettings, setPlanAction, deleteStoreAction } from "@/app/(admin)/settings/actions";
 import { unpublishStoreAction } from "@/app/(admin)/publish/actions";
 import {
   Button,
@@ -154,8 +154,24 @@ export function Settings({
 
   const [unpublishOpen, setUnpublishOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
 
   const pill = storeStatusPill(status);
+
+  function doDelete() {
+    if (deleteConfirm.trim() !== store.name) return;
+    startTransition(async () => {
+      const res = await deleteStoreAction(deleteConfirm);
+      if (res.ok) {
+        toast(`${store.name} deleted`);
+        // Hard navigation: the current store is gone, so drop any client cache and
+        // let the app shell route the (now store-less) account to onboarding.
+        window.location.assign("/");
+      } else {
+        toast(res.error ?? "Couldn't delete the store", { tone: "critical" });
+      }
+    });
+  }
 
   function doUnpublish() {
     startTransition(async () => {
@@ -1009,30 +1025,58 @@ export function Settings({
       {/* Delete confirm */}
       <Modal
         open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteConfirm("");
+        }}
         title="Delete store"
         maxWidth={440}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDeleteOpen(false);
+                setDeleteConfirm("");
+              }}
+            >
               Cancel
             </Button>
             <Button
               variant="critical-solid"
-              onClick={() => {
-                setDeleteOpen(false);
-                toast("Store deletion is disabled in the demo", { tone: "critical" });
-              }}
+              loading={pending}
+              disabled={deleteConfirm.trim() !== store.name}
+              onClick={doDelete}
             >
-              Delete {store.name}
+              Delete this store
             </Button>
           </>
         }
       >
         <p style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>
-          This permanently deletes <strong>{store.name}</strong> and all of its data. This
-          cannot be undone.
+          This permanently deletes <strong>{store.name}</strong> and everything in it —
+          products, orders, customers, collections, and settings. This cannot be undone.
         </p>
+        <label
+          style={{
+            display: "block",
+            marginTop: "var(--space-4)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            color: "var(--text-strong)",
+          }}
+        >
+          Type <span className="mono">{store.name}</span> to confirm
+          <input
+            className="input"
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            placeholder={store.name}
+            autoComplete="off"
+            spellCheck={false}
+            style={{ marginTop: "var(--space-2)" }}
+          />
+        </label>
       </Modal>
     </div>
   );

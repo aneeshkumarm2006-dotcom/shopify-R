@@ -9,6 +9,23 @@ import {
   StoreModel,
   UserModel,
   SubscriptionModel,
+  ProductModel,
+  CollectionModel,
+  PageModel,
+  ReviewModel,
+  InventoryAdjustmentModel,
+  InventoryLevelModel,
+  OrderModel,
+  CustomerModel,
+  CartModel,
+  DiscountModel,
+  GiftCardModel,
+  CampaignModel,
+  LocationModel,
+  ThemeConfigModel,
+  ThemeVersionModel,
+  StoreMemberModel,
+  CustomDomainModel,
 } from "@/lib/db";
 
 /**
@@ -272,4 +289,42 @@ export async function unpublishStore(storeId: string): Promise<Store> {
   ).lean();
   if (!updated) throw new PublishError("Store not found.");
   return serialize<Store>(updated);
+}
+
+/**
+ * Permanently delete a store and every tenant-scoped record it owns — the whole
+ * catalog (products, collections, pages, reviews, inventory), commerce data
+ * (orders, customers, carts, discounts, gift cards, campaigns), configuration
+ * (theme config + versions, locations, custom domains, subscription, members),
+ * and finally the store document itself. Irreversible.
+ *
+ * Cross-tenant operator observability (PlatformEvent / PlatformError audit logs)
+ * is deliberately left intact — it's append-only, PII-free, and keyed by storeId
+ * for after-the-fact accountability. Authorization (owner-only, no impersonation)
+ * is enforced by the calling server action, never here.
+ */
+export async function deleteStore(storeId: string): Promise<void> {
+  if (!isDbConfigured()) return;
+  await dbConnect();
+  await Promise.all([
+    ProductModel.deleteMany({ storeId }),
+    CollectionModel.deleteMany({ storeId }),
+    PageModel.deleteMany({ storeId }),
+    ReviewModel.deleteMany({ storeId }),
+    InventoryAdjustmentModel.deleteMany({ storeId }),
+    InventoryLevelModel.deleteMany({ storeId }),
+    OrderModel.deleteMany({ storeId }),
+    CustomerModel.deleteMany({ storeId }),
+    CartModel.deleteMany({ storeId }),
+    DiscountModel.deleteMany({ storeId }),
+    GiftCardModel.deleteMany({ storeId }),
+    CampaignModel.deleteMany({ storeId }),
+    LocationModel.deleteMany({ storeId }),
+    ThemeConfigModel.deleteMany({ storeId }),
+    ThemeVersionModel.deleteMany({ storeId }),
+    StoreMemberModel.deleteMany({ storeId }),
+    CustomDomainModel.deleteMany({ storeId }),
+    SubscriptionModel.deleteMany({ storeId }),
+  ]);
+  await StoreModel.findByIdAndDelete(storeId);
 }

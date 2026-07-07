@@ -45,6 +45,45 @@ export async function getCollectionIdsForProduct(
   return rows.map((c) => c._id);
 }
 
+export interface CollectionTile {
+  /** Live count of ACTIVE products currently in the collection. */
+  count: number;
+  /** First active product's cover image, if any. */
+  image?: string;
+}
+
+/**
+ * Live tile data (product count + representative cover image) per collection handle,
+ * for the storefront's `collection_list` section. Resolved at render time so category
+ * cards show REAL counts and photography instead of a stale baked-in snapshot — the
+ * theme config persists a `count` at authoring time that goes stale as the catalog
+ * changes, which previously hid non-empty categories (count:0 → filtered) and left
+ * tiles as empty boxes. Best-effort: a failed lookup for one handle never throws.
+ */
+export async function getCollectionTiles(
+  storeId: string,
+  handles: string[],
+): Promise<Record<string, CollectionTile>> {
+  const tiles: Record<string, CollectionTile> = {};
+  const unique = [...new Set(handles.filter(Boolean))];
+  await Promise.all(
+    unique.map(async (handle) => {
+      try {
+        const active = (await getCollectionProducts(storeId, handle)).filter(
+          (p) => p.status === "active",
+        );
+        const image = active
+          .map((p) => p.images?.[0])
+          .find((src): src is string => Boolean(src));
+        tiles[handle] = { count: active.length, image };
+      } catch {
+        // best-effort — a single bad handle shouldn't break the whole home render
+      }
+    }),
+  );
+  return tiles;
+}
+
 /** Products belonging to a collection (manual membership, PRD §5.5). */
 export async function getCollectionProducts(
   storeId: string,

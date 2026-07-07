@@ -169,6 +169,7 @@ export const EVENT_TYPES = [
   "store.created",
   "store.published",
   "store.unpublished",
+  "store.deleted",
   "store.suspended",
   "store.reinstated",
   "subdomain.claimed",

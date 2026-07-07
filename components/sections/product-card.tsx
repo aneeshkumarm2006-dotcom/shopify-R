@@ -62,9 +62,11 @@ export function ProductCard({
         <span style={{ fontWeight: 500, fontSize: "var(--text-base)", color: "var(--text-strong)" }}>
           {product.title}
         </span>
-        <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-          {productType(product)}
-        </span>
+        {productType(product) && (
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            {productType(product)}
+          </span>
+        )}
       </div>
       <div
         style={{

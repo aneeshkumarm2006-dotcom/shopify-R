@@ -165,10 +165,18 @@ export function HeroSection({ section, preview, onNavigate }: SectionProps) {
 export function FeaturedProductsSection({ section, products, currency, preview, onNavigate }: SectionProps) {
   const s = section.settings as { title?: string; productIds?: string[]; columns?: number };
   const byId = new Map(products.map((p) => [p._id, p]));
+  const cols = s.columns ?? 4;
   const picked = (s.productIds ?? [])
     .map((id) => byId.get(id))
     .filter((p): p is Product => Boolean(p));
-  const cols = s.columns ?? 4;
+  // Never leave the homepage with an empty product section: when the merchant hasn't
+  // hand-picked anything, feature the store's first products automatically (Shopify
+  // does the same). Only a truly empty catalog falls through to the empty state.
+  const list = picked.length > 0 ? picked : products.slice(0, cols * 2);
+
+  // Live storefront: a store with no products at all hides the section entirely
+  // rather than showing a broken "no products" placeholder to shoppers.
+  if (!preview && list.length === 0) return null;
 
   return (
     <section style={{ padding: "var(--space-20) 0" }}>
@@ -184,11 +192,11 @@ export function FeaturedProductsSection({ section, products, currency, preview, 
         >
           <h2 className="store-section-title">{s.title ?? "Featured products"}</h2>
         </div>
-        {picked.length === 0 ? (
-          <EmptyState icon="box" title="No products selected" body="Pick products to feature in this section." />
+        {list.length === 0 ? (
+          <EmptyState icon="box" title="No products yet" body="Add products and they'll appear here automatically." />
         ) : (
           <div className="store-grid" style={{ ["--cols" as string]: cols }}>
-            {picked.map((p) => (
+            {list.map((p) => (
               <ProductCard key={p._id} product={p} currency={currency} preview={preview} onNavigate={onNavigate} />
             ))}
           </div>
@@ -203,7 +211,7 @@ export function CollectionListSection({ section, preview, onNavigate }: SectionP
   const s = section.settings as {
     title?: string;
     columns?: number;
-    collections?: { name: string; handle?: string; count?: number }[];
+    collections?: { name: string; handle?: string; count?: number; image?: string }[];
   };
   const cols = s.columns ?? 4;
   const all = s.collections ?? [];
@@ -234,12 +242,24 @@ export function CollectionListSection({ section, preview, onNavigate }: SectionP
                   padding: "var(--space-5)",
                 }}
               >
+                {c.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.image}
+                    alt=""
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                )}
                 <div
                   aria-hidden
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "radial-gradient(100% 100% at 30% 0%, #2a261d 0%, #16140E 70%)",
+                    // With a cover photo, a bottom-up scrim keeps the label legible;
+                    // without one, the original warm radial fill stands in.
+                    background: c.image
+                      ? "linear-gradient(180deg, rgba(11,10,7,0) 30%, rgba(11,10,7,0.75) 100%)"
+                      : "radial-gradient(100% 100% at 30% 0%, #2a261d 0%, #16140E 70%)",
                   }}
                 />
                 <div style={{ position: "relative" }}>

@@ -70,7 +70,12 @@ export function lineKey(productId: string, variantId: string): string {
   return `${productId}:${variantId}`;
 }
 
-/** A short, human "type" label for a product, inferred from its first option. */
+/**
+ * A short, human "type" label for a product — its merchandising category
+ * (e.g. "Tinctures", "T-Shirts"), falling back to the vendor. Returns "" when the
+ * product carries neither, so callers can hide the line instead of showing a
+ * meaningless placeholder (it used to surface the first *option* name, e.g. "Size").
+ */
 export function productType(p: Product): string {
-  return p.options[0]?.name ?? "Product";
+  return p.productType?.trim() || p.vendor?.trim() || "";
 }
