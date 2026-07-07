@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Eyebrow, Icon } from "@/components/ui";
 import type { SubdomainCheck } from "@/lib/data/subdomain";
 import { checkSubdomainAvailability, claimSubdomain } from "@/lib/auth/actions";
-import { STORE_TEMPLATES, type StoreTemplateId } from "@/lib/data/store-templates";
+import {
+  STORE_TEMPLATES,
+  buildTemplateConfig,
+  type StoreTemplateId,
+} from "@/lib/data/store-templates";
+import { StoreRenderer } from "@/components/sections";
 import { APP_DOMAIN } from "@/lib/format";
 import { AuthFrame } from "./auth-frame";
 
@@ -49,8 +54,6 @@ export function Onboarding({ suggested = "" }: { suggested?: string }) {
   const [claiming, setClaiming] = useState(false);
   const [claimedSub, setClaimedSub] = useState("");
   const token = useRef(0);
-  // Skip the first debounced re-check when the field still holds the server suggestion.
-  const skipFirstCheck = useRef(Boolean(suggested));
 
   // After the celebratory success step, glide the merchant into their dashboard.
   useEffect(() => {
@@ -65,10 +68,12 @@ export function Onboarding({ suggested = "" }: { suggested?: string }) {
       setState({ kind: "idle" });
       return;
     }
-    // The prefilled suggestion was already validated server-side — don't flash a
-    // "checking" spinner on mount. Any subsequent edit runs the real check.
-    if (skipFirstCheck.current) {
-      skipFirstCheck.current = false;
+    // The server already validated `suggested` as available, so whenever the field
+    // holds exactly that value it's known-good — skip the check entirely (Continue is
+    // clickable on load, no spinner). This is idempotent, so React's dev double-render
+    // can't defeat it the way a one-shot "skip" ref did. Editing away runs the real check.
+    if (suggested && v === suggested) {
+      setState({ kind: "ok" });
       return;
     }
     setState({ kind: "checking" });
@@ -239,15 +244,31 @@ export function Onboarding({ suggested = "" }: { suggested?: string }) {
             <Button
               variant="primary"
               size="lg"
-              iconRight="arrowRight"
+              iconRight={claiming ? undefined : "arrowRight"}
               disabled={!template || claiming}
               loading={claiming}
               onClick={handleCreate}
               style={{ flex: 1 }}
             >
-              Create my store
+              {claiming ? "Building your store…" : "Create my store"}
             </Button>
           </div>
+          {claiming && (
+            <p
+              role="status"
+              aria-live="polite"
+              style={{
+                marginTop: "var(--space-4)",
+                textAlign: "center",
+                fontSize: "var(--text-sm)",
+                color: "var(--text-muted)",
+              }}
+            >
+              Claiming your address, applying the{" "}
+              {STORE_TEMPLATES.find((t) => t.id === template)?.name ?? "starter"} theme, and setting
+              up your storefront…
+            </p>
+          )}
         </div>
       </AuthFrame>
     );
@@ -430,7 +451,7 @@ function TemplateCard({
       }}
     >
       <div style={{ position: "relative" }}>
-        <TemplateThumb id={id} />
+        <TemplatePreview id={id} />
         <span
           style={{
             position: "absolute",
@@ -548,6 +569,73 @@ function ScratchOption({ selected, onSelect }: { selected: boolean; onSelect: ()
 }
 
 /* ------------------------------------------------------------- mini previews */
+
+/** How wide the real storefront is rendered before being scaled into the thumbnail. */
+const PREVIEW_RENDER_WIDTH = 1200;
+
+/**
+ * A REAL mini-storefront preview — the same `StoreRenderer` the builder and live store
+ * use, built from the template's actual theme config and scaled down (cropped to the
+ * header + hero, like Shopify's theme thumbnails). Replaces the old hand-drawn skeleton
+ * bars so the merchant sees the actual look they're choosing, not an abstract sketch.
+ */
+function TemplatePreview({ id }: { id: StoreTemplateId }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.2);
+  // StoreRenderer only reads templates/header/footer; add the ThemeConfig id/timestamps
+  // so the types line up without a cast.
+  const config = useMemo(() => {
+    const t = buildTemplateConfig(id);
+    return t ? { ...t, storeId: "preview", createdAt: "", updatedAt: "" } : null;
+  }, [id]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setScale(el.clientWidth / PREVIEW_RENDER_WIDTH);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  if (!config) return <TemplateThumb id={id} />; // safety net if a template can't build
+
+  return (
+    <div
+      ref={ref}
+      aria-hidden
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: "16 / 10",
+        overflow: "hidden",
+        background: "var(--warm-0)",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: PREVIEW_RENDER_WIDTH,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+          pointerEvents: "none",
+        }}
+      >
+        <StoreRenderer
+          storeId="preview"
+          config={config}
+          mode="preview"
+          products={[]}
+          storeName="Your store"
+        />
+      </div>
+    </div>
+  );
+}
 
 /** Skeleton bar — the thumbnails sketch each template's layout, not its copy. */
 function Bar({
