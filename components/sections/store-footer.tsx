@@ -11,10 +11,15 @@ interface FooterColumn {
   title: string;
   links: { label: string; href: string }[];
 }
+interface SocialLink {
+  label: string;
+  url: string;
+}
 interface FooterSettings {
   tagline?: string;
   columns?: FooterColumn[];
   legal?: string;
+  social?: SocialLink[];
 }
 
 /**
@@ -113,7 +118,7 @@ export function StoreFooter({
           >
             {tagline}
           </p>
-          <SocialRow />
+          <SocialRow links={s.social} />
         </div>
 
         {columns.map((col) => (
@@ -206,17 +211,20 @@ function Trust({ icon, label }: { icon: "truck" | "refresh" | "lock"; label: str
   );
 }
 
-function SocialRow() {
-  const items: { name: "store" | "mail" | "external"; label: string }[] = [
-    { name: "store", label: "Instagram" },
-    { name: "external", label: "TikTok" },
-    { name: "mail", label: "Newsletter" },
-  ];
+/** Merchant-configured social links (Wave: header/footer richness). Real, working
+ * links on the live storefront — no icon set for individual platforms, so every
+ * entry uses a generic external-link glyph with the platform name as the label. */
+function SocialRow({ links }: { links?: SocialLink[] }) {
+  const items = (links ?? []).filter((l) => l.label.trim() && l.url.trim());
+  if (items.length === 0) return null;
   return (
     <div style={{ display: "flex", gap: 8, marginTop: "var(--space-5)" }}>
-      {items.map((it) => (
-        <span
-          key={it.label}
+      {items.map((it, i) => (
+        <a
+          key={`${it.label}-${i}`}
+          href={it.url}
+          target="_blank"
+          rel="noopener noreferrer"
           aria-label={it.label}
           title={it.label}
           style={{
@@ -230,8 +238,8 @@ function SocialRow() {
             background: "var(--surface)",
           }}
         >
-          <Icon name={it.name} size={15} aria-hidden />
-        </span>
+          <Icon name="external" size={15} aria-hidden />
+        </a>
       ))}
     </div>
   );

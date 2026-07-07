@@ -14,11 +14,16 @@ interface NavItem {
   label: string;
   href: string;
 }
+interface SocialLink {
+  label: string;
+  url: string;
+}
 interface HeaderSettings {
   promo?: string;
   showSearch?: boolean;
   showCart?: boolean;
   nav?: NavItem[];
+  social?: SocialLink[];
 }
 
 /** Default announcement when the merchant hasn't set a promo (real-store texture). */
@@ -144,6 +149,30 @@ export function StoreHeader({
         </nav>
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+          {!!s.social?.length && (
+            <div style={{ display: "flex", alignItems: "center", gap: 2, marginRight: 4 }}>
+              {s.social.filter((l) => l.label.trim() && l.url.trim()).map((l, i) =>
+                preview ? (
+                  <span key={`${l.label}-${i}`} className="iconbtn sz-36" style={{ color: "var(--warm-800)" }}>
+                    <Icon name="external" size={16} aria-hidden />
+                  </span>
+                ) : (
+                  <a
+                    key={`${l.label}-${i}`}
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="iconbtn sz-36"
+                    aria-label={l.label}
+                    title={l.label}
+                    style={{ color: "var(--warm-800)" }}
+                  >
+                    <Icon name="external" size={16} aria-hidden />
+                  </a>
+                ),
+              )}
+            </div>
+          )}
           {s.showSearch !== false && <HeaderSearch preview={preview} />}
           {!preview && (
             <Link

@@ -406,6 +406,30 @@ function renderFields(
               </>
             )}
           />
+          <RepeatableList<{ label: string; url: string }>
+            label="Social links"
+            addLabel="Add social link"
+            items={(s.social as { label: string; url: string }[]) ?? []}
+            onChange={(next) => set("social", next)}
+            newItem={() => ({ label: "Instagram", url: "https://" })}
+            emptyHint="No social links."
+            renderItem={(item, update) => (
+              <>
+                <Input
+                  aria-label="Platform name"
+                  placeholder="Instagram"
+                  value={item.label}
+                  onChange={(e) => update({ label: e.target.value })}
+                />
+                <Input
+                  aria-label="Profile URL"
+                  placeholder="https://instagram.com/…"
+                  value={item.url}
+                  onChange={(e) => update({ url: e.target.value })}
+                />
+              </>
+            )}
+          />
         </>
       );
 
@@ -433,12 +457,62 @@ function renderFields(
             newItem={() => ({ title: "New column", links: [] })}
             emptyHint="No footer columns."
             renderItem={(item, update) => (
-              <Input
-                aria-label="Column title"
-                placeholder="Column title"
-                value={item.title}
-                onChange={(e) => update({ title: e.target.value })}
-              />
+              <div style={{ display: "grid", gap: "var(--space-2)", width: "100%" }}>
+                <Input
+                  aria-label="Column title"
+                  placeholder="Column title"
+                  value={item.title}
+                  onChange={(e) => update({ title: e.target.value })}
+                />
+                <RepeatableList<{ label: string; href?: string }>
+                  label="Links"
+                  addLabel="Add link"
+                  items={item.links ?? []}
+                  onChange={(links) => update({ links })}
+                  newItem={() => ({ label: "New link", href: "/" })}
+                  emptyHint="No links in this column."
+                  renderItem={(link, updateLink) => (
+                    <>
+                      <Input
+                        aria-label="Link label"
+                        placeholder="Label"
+                        value={link.label}
+                        onChange={(e) => updateLink({ label: e.target.value })}
+                      />
+                      <Input
+                        aria-label="Link URL"
+                        placeholder="/pages/…"
+                        value={link.href ?? ""}
+                        onChange={(e) => updateLink({ href: e.target.value })}
+                      />
+                    </>
+                  )}
+                />
+              </div>
+            )}
+          />
+          <RepeatableList<{ label: string; url: string }>
+            label="Social links"
+            addLabel="Add social link"
+            items={(s.social as { label: string; url: string }[]) ?? []}
+            onChange={(next) => set("social", next)}
+            newItem={() => ({ label: "Instagram", url: "https://" })}
+            emptyHint="No social links."
+            renderItem={(item, update) => (
+              <>
+                <Input
+                  aria-label="Platform name"
+                  placeholder="Instagram"
+                  value={item.label}
+                  onChange={(e) => update({ label: e.target.value })}
+                />
+                <Input
+                  aria-label="Profile URL"
+                  placeholder="https://instagram.com/…"
+                  value={item.url}
+                  onChange={(e) => update({ url: e.target.value })}
+                />
+              </>
             )}
           />
           <Field label="Legal / compliance text">
