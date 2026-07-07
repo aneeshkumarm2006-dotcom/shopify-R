@@ -20,6 +20,7 @@ import {
   InventoryLevelModel,
   LocationModel,
   OrderModel,
+  PageModel,
   ProductModel,
   ReviewModel,
 } from "./models";
@@ -34,6 +35,7 @@ import type {
   InventoryLevel,
   Location,
   Order,
+  Page,
   Product,
   Review,
 } from "@/types";
@@ -50,6 +52,7 @@ export * from "./models";
 /* ---- Tenant-scoped repositories (the only way to touch store data) ---- */
 export const Products = new StoreScopedRepository<Product>(ProductModel);
 export const Collections = new StoreScopedRepository<Collection>(CollectionModel);
+export const Pages = new StoreScopedRepository<Page>(PageModel);
 export const InventoryAdjustments = new StoreScopedRepository<InventoryAdjustment>(
   InventoryAdjustmentModel,
 );

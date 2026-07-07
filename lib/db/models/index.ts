@@ -18,6 +18,7 @@ export {
 export {
   ProductModel,
   CollectionModel,
+  PageModel,
   ReviewModel,
   InventoryAdjustmentModel,
   InventoryLevelModel,

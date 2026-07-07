@@ -72,6 +72,7 @@ const NAV: NavItem[] = [
   { label: "Marketing", icon: "mail", href: "/marketing" },
   { label: "Reviews", icon: "star", href: "/reviews" },
   { label: "Online Store", icon: "store", href: "/builder" },
+  { label: "Pages", icon: "type", href: "/pages" },
   { label: "Analytics", icon: "analytics", href: "/analytics" },
   { label: "Staff", icon: "customers", href: "/staff" },
   { label: "Settings", icon: "settings", href: "/settings" },

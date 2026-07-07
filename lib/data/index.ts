@@ -23,6 +23,7 @@ export * from "./discounts";
 export * from "./domains";
 export * from "./collections";
 export * from "./collection-rules";
+export * from "./pages";
 export * from "./reviews";
 export * from "./gift-cards";
 export * from "./segments";

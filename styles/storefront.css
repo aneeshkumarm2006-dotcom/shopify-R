@@ -204,3 +204,56 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Content page (About / Contact / FAQ / policies) — merchant CMS body.
+ * ------------------------------------------------------------------ */
+.store-page {
+  max-width: 760px;
+  padding-top: var(--space-16);
+  padding-bottom: var(--space-16);
+}
+.store-page-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-3xl);
+  letter-spacing: -0.02em;
+  color: var(--warm-900);
+  line-height: 1.1;
+  margin: 0 0 var(--space-6);
+}
+.store-page-body {
+  font-size: var(--text-md);
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-line;
+}
+.store-page-body :where(h2) {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-2xl);
+  color: var(--warm-900);
+  margin: var(--space-8) 0 var(--space-3);
+  white-space: normal;
+}
+.store-page-body :where(h3) {
+  font-weight: 600;
+  font-size: var(--text-lg);
+  color: var(--warm-900);
+  margin: var(--space-6) 0 var(--space-2);
+  white-space: normal;
+}
+.store-page-body :where(p) {
+  margin: 0 0 var(--space-4);
+}
+.store-page-body :where(a) {
+  color: var(--accent-pressed);
+  text-decoration: underline;
+}
+.store-page-body :where(ul, ol) {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-6);
+}
+.store-page-body :where(li) {
+  margin-bottom: 6px;
+}

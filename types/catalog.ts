@@ -78,6 +78,27 @@ export type CollectionInput = Pick<Collection, "title" | "handle" | "productIds"
   Partial<Pick<Collection, "kind" | "rules">>;
 
 /* ============================================================
+   Content pages — static content (About, Contact, FAQ, policies, …). Each is its
+   own record with its own title + body, unlike the single shared themeConfig
+   "page" template (which still applies as supplementary sections around every
+   page's body, the same way "product"/"collection" templates do).
+   ============================================================ */
+export type PageStatus = "visible" | "hidden";
+
+export interface Page extends Timestamps {
+  _id: Id;
+  storeId: Id;
+  title: string;
+  handle: string; // URL slug, unique per store — /pages/<handle>
+  body: string; // rich text / HTML
+  status: PageStatus;
+  seo: ProductSeo;
+}
+
+export type PageInput = Pick<Page, "title" | "handle" | "body"> &
+  Partial<Pick<Page, "status" | "seo">>;
+
+/* ============================================================
    5.5 collections (manual grouping OR smart/automated rules)
    ============================================================ */
 /** How a collection decides membership. `manual` = curated list; `smart` = rules. */

@@ -108,6 +108,27 @@ const CollectionSchema = new Schema(
 CollectionSchema.index({ storeId: 1, handle: 1 }, { unique: true });
 
 /* ============================================================
+   Content pages — merchant-authored static content (About, Contact, FAQ, …).
+   ============================================================ */
+const PageSeoSchema = new Schema(
+  { title: { type: String, default: "" }, description: { type: String, default: "" } },
+  { _id: false },
+);
+const PageSchema = new Schema(
+  {
+    _id: stringId,
+    storeId: { type: String, required: true },
+    title: { type: String, required: true },
+    handle: { type: String, required: true },
+    body: { type: String, default: "" },
+    status: { type: String, enum: ["visible", "hidden"], default: "visible" },
+    seo: { type: PageSeoSchema, default: () => ({}) },
+  },
+  baseSchemaOptions,
+);
+PageSchema.index({ storeId: 1, handle: 1 }, { unique: true });
+
+/* ============================================================
    Product reviews / ratings (Phase 4)
    ============================================================ */
 const ReviewSchema = new Schema(
@@ -164,6 +185,7 @@ InventoryLevelSchema.index({ storeId: 1, locationId: 1 });
 
 export const ProductModel = defineModel("Product", ProductSchema);
 export const CollectionModel = defineModel("Collection", CollectionSchema);
+export const PageModel = defineModel("Page", PageSchema);
 export const ReviewModel = defineModel("Review", ReviewSchema);
 export const InventoryAdjustmentModel = defineModel("InventoryAdjustment", InventoryAdjustmentSchema);
 export const InventoryLevelModel = defineModel("InventoryLevel", InventoryLevelSchema);
