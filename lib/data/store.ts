@@ -35,6 +35,32 @@ export async function getStoreBySubdomain(subdomain: string): Promise<Store | nu
   );
 }
 
+/**
+ * Suggest an available subdomain from a seed string (the store's default name). Reduces
+ * onboarding friction: Shopify assigns a handle instantly rather than making you pick +
+ * wait, so we prefill a pre-validated one the merchant can accept in one click or edit.
+ * Slugifies the seed, then appends -2, -3, … until a free, DNS-safe, non-reserved value
+ * is found. Returns "" only if nothing usable can be derived (caller falls back to the
+ * blank field).
+ */
+export async function suggestAvailableSubdomain(seed: string): Promise<string> {
+  const { RESERVED_SUBDOMAINS, isDnsSafeSubdomain } = await import("@/lib/tenant/host");
+  const base = seed
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const root = base || "store";
+  for (let i = 0; i < 100; i++) {
+    const candidate = i === 0 ? root : `${root}-${i + 1}`.slice(0, 63);
+    if (!isDnsSafeSubdomain(candidate) || RESERVED_SUBDOMAINS.includes(candidate)) continue;
+    const taken = await getStoreBySubdomain(candidate);
+    if (!taken) return candidate;
+  }
+  return "";
+}
+
 export async function getStoreOwner(storeId: string): Promise<User | null> {
   if (!isDbConfigured()) {
     return mockStore._id === storeId ? resolve(mockUser) : null;

@@ -38,15 +38,19 @@ const REASON_COPY: Record<NonNullable<SubdomainCheck["reason"]>, string> = {
   invalid: "Use lowercase letters, numbers, and hyphens (3–63 chars)",
 };
 
-export function Onboarding() {
+export function Onboarding({ suggested = "" }: { suggested?: string }) {
   const router = useRouter();
   const [step, setStep] = useState<"address" | "template" | "done">("address");
-  const [value, setValue] = useState("");
-  const [state, setState] = useState<CheckState>({ kind: "idle" });
+  const [value, setValue] = useState(suggested);
+  // The server pre-validated `suggested` as available, so start "ok" (Continue is
+  // clickable immediately) rather than forcing a check-and-wait on a prefilled value.
+  const [state, setState] = useState<CheckState>(suggested ? { kind: "ok" } : { kind: "idle" });
   const [template, setTemplate] = useState<StoreTemplateId | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimedSub, setClaimedSub] = useState("");
   const token = useRef(0);
+  // Skip the first debounced re-check when the field still holds the server suggestion.
+  const skipFirstCheck = useRef(Boolean(suggested));
 
   // After the celebratory success step, glide the merchant into their dashboard.
   useEffect(() => {
@@ -59,6 +63,12 @@ export function Onboarding() {
     const v = value.trim();
     if (!v) {
       setState({ kind: "idle" });
+      return;
+    }
+    // The prefilled suggestion was already validated server-side — don't flash a
+    // "checking" spinner on mount. Any subsequent edit runs the real check.
+    if (skipFirstCheck.current) {
+      skipFirstCheck.current = false;
       return;
     }
     setState({ kind: "checking" });
@@ -266,7 +276,9 @@ export function Onboarding() {
             marginBottom: "var(--space-6)",
           }}
         >
-          This is where your store lives. You can change it later in Settings.
+          {suggested
+            ? "We picked one for you — keep it or make it your own. You can change it later in Settings."
+            : "This is where your store lives. You can change it later in Settings."}
         </p>
 
         <div
