@@ -41,6 +41,15 @@ function statusOf(onHand: number, threshold: number): StockStatus {
   return "in_stock";
 }
 
+/**
+ * Identity of an inventory row. A variant's `id` is only unique WITHIN its product
+ * (the product editor mints per-product ids, and seeds may reuse "v-1"), so keying
+ * per-row state by `variant.id` alone collides across products — editing one row then
+ * moves every row that shares that id. The rest of the app keys by the
+ * (productId, variantId) PAIR (see `lineKey`, checkout, adjustments); inventory must too.
+ */
+const rowKey = (productId: string, variantId: string): string => `${productId}::${variantId}`;
+
 const REASONS: { value: InventoryReason; label: string }[] = [
   { value: "restock", label: "Restock" },
   { value: "correction", label: "Correction" },
@@ -61,19 +70,20 @@ export function Inventory({
   const [, startTransition] = useTransition();
   const [filter, setFilter] = useState("All");
   const [qty, setQty] = useState<Record<string, number>>(() =>
-    Object.fromEntries(rows.map((r) => [r.variant.id, r.onHand])),
+    Object.fromEntries(rows.map((r) => [rowKey(r.productId, r.variant.id), r.onHand])),
   );
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [history, setHistory] = useState<InventoryRow | null>(null);
 
-  const byVariant = useMemo(
-    () => new Map(rows.map((r) => [r.variant.id, r])),
+  const byRow = useMemo(
+    () => new Map(rows.map((r) => [rowKey(r.productId, r.variant.id), r])),
     [rows],
   );
 
   /** Inline stepper quick-edit → an audited "correction" set, optimistic UI. */
   function quickSet(row: InventoryRow, next: number) {
-    setQty((q) => ({ ...q, [row.variant.id]: next }));
+    const key = rowKey(row.productId, row.variant.id);
+    setQty((q) => ({ ...q, [key]: next }));
     startTransition(async () => {
       const res = await adjustStock({
         productId: row.productId,
@@ -87,19 +97,19 @@ export function Inventory({
   }
 
   /** Set a specific location's stock (Phase 6); the sellable total resyncs server-side. */
-  function setLevel(variantId: string, locationId: string, amount: number) {
-    const row = byVariant.get(variantId);
+  function setLevel(key: string, locationId: string, amount: number) {
+    const row = byRow.get(key);
     if (!row) return;
     setAdjustOpen(false);
     startTransition(async () => {
       const res = await setInventoryLevelAction({
         productId: row.productId,
-        variantId,
+        variantId: row.variant.id,
         locationId,
         quantity: amount,
       });
       if (res.ok) {
-        if (res.total !== undefined) setQty((q) => ({ ...q, [variantId]: res.total! }));
+        if (res.total !== undefined) setQty((q) => ({ ...q, [key]: res.total! }));
         toast("Location stock updated");
         router.refresh();
       } else {
@@ -109,27 +119,27 @@ export function Inventory({
   }
 
   function applyAdjustment(
-    variantId: string,
+    key: string,
     mode: "add" | "set",
     amount: number,
     reason: InventoryReason,
     nextQty: number,
   ) {
-    const row = byVariant.get(variantId);
+    const row = byRow.get(key);
     if (!row) return;
-    setQty((q) => ({ ...q, [variantId]: nextQty }));
+    setQty((q) => ({ ...q, [key]: nextQty }));
     setAdjustOpen(false);
     startTransition(async () => {
       const res = await adjustStock({
         productId: row.productId,
-        variantId,
+        variantId: row.variant.id,
         mode,
         amount,
         reason,
       });
       if (res.ok) {
         if (res.resultingQuantity !== undefined) {
-          setQty((q) => ({ ...q, [variantId]: res.resultingQuantity! }));
+          setQty((q) => ({ ...q, [key]: res.resultingQuantity! }));
         }
         toast("Stock adjusted");
         router.refresh();
@@ -143,7 +153,7 @@ export function Inventory({
     let low = 0;
     let out = 0;
     for (const r of rows) {
-      const s = statusOf(qty[r.variant.id] ?? r.onHand, r.threshold);
+      const s = statusOf(qty[rowKey(r.productId, r.variant.id)] ?? r.onHand, r.threshold);
       if (s === "low") low++;
       if (s === "out") out++;
     }
@@ -151,14 +161,17 @@ export function Inventory({
   }, [rows, qty]);
 
   const visible = rows.filter((r) => {
-    const s = statusOf(qty[r.variant.id] ?? r.onHand, r.threshold);
+    const s = statusOf(qty[rowKey(r.productId, r.variant.id)] ?? r.onHand, r.threshold);
     if (filter === "Low") return s === "low";
     if (filter === "Out") return s === "out";
     return true;
   });
 
+  // Match BOTH product and variant — a variant id alone can belong to several products.
   const historyEntries = history
-    ? adjustments.filter((a) => a.variantId === history.variant.id)
+    ? adjustments.filter(
+        (a) => a.variantId === history.variant.id && a.productId === history.productId,
+      )
     : [];
 
   return (
@@ -221,10 +234,11 @@ export function Inventory({
           </thead>
           <tbody>
             {visible.map((r) => {
-              const onHand = qty[r.variant.id] ?? r.onHand;
+              const key = rowKey(r.productId, r.variant.id);
+              const onHand = qty[key] ?? r.onHand;
               const status = statusOf(onHand, r.threshold);
               return (
-                <tr key={r.variant.id} style={{ cursor: "default" }}>
+                <tr key={key} style={{ cursor: "default" }}>
                   <td>
                     <span style={{ fontWeight: 500, color: "var(--text-strong)" }}>
                       {r.productTitle}
@@ -380,16 +394,18 @@ function AdjustStockModal({
   rows: InventoryRow[];
   currentQty: Record<string, number>;
   onApply: (
-    variantId: string,
+    rowKeyValue: string,
     mode: "add" | "set",
     amount: number,
     reason: InventoryReason,
     nextQty: number,
   ) => void;
-  onSetLevel: (variantId: string, locationId: string, amount: number) => void;
+  onSetLevel: (rowKeyValue: string, locationId: string, amount: number) => void;
   locations: Location[];
 }) {
-  const [variantId, setVariantId] = useState(rows[0]?.variant.id ?? "");
+  const [selectedKey, setSelectedKey] = useState(
+    rows[0] ? rowKey(rows[0].productId, rows[0].variant.id) : "",
+  );
   const [mode, setMode] = useState<"add" | "set">("add");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState<InventoryReason>("restock");
@@ -399,13 +415,13 @@ function AdjustStockModal({
   const [locationId, setLocationId] = useState("");
   const multiLocation = locations.length > 1;
 
-  const current = currentQty[variantId] ?? 0;
+  const current = currentQty[selectedKey] ?? 0;
   const n = parseInt(amount || "0", 10) || 0;
   const resulting = mode === "set" ? n : Math.max(0, current + n);
 
   function apply() {
-    if (locationId) onSetLevel(variantId, locationId, n);
-    else onApply(variantId, mode, n, reason, resulting);
+    if (locationId) onSetLevel(selectedKey, locationId, n);
+    else onApply(selectedKey, mode, n, reason, resulting);
   }
 
   return (
@@ -421,7 +437,7 @@ function AdjustStockModal({
           </Button>
           <Button
             variant="primary"
-            disabled={!variantId || amount === ""}
+            disabled={!selectedKey || amount === ""}
             onClick={apply}
           >
             {locationId ? "Set location stock" : "Apply adjustment"}
@@ -432,10 +448,10 @@ function AdjustStockModal({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <Field label="Variant">
           <Select
-            value={variantId}
-            onChange={(e) => setVariantId(e.target.value)}
+            value={selectedKey}
+            onChange={(e) => setSelectedKey(e.target.value)}
             options={rows.map((r) => ({
-              value: r.variant.id,
+              value: rowKey(r.productId, r.variant.id),
               label: `${r.productTitle}${r.variant.title !== "Default" ? " · " + r.variant.title : ""}`,
             }))}
           />

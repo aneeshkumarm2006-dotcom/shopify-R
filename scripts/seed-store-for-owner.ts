@@ -77,7 +77,7 @@ async function main() {
       description: "<p>25mg CBD per gummy, 30 count. Vegan, gluten-free.</p>",
       tags: ["edibles", "vegan"], attributes: [{ name: "CBD", value: "25mg / piece" }, { name: "Count", value: "30" }],
       images: [IMG("cld-sample-4")],
-      variants: [{ id: "v-1", title: "30 ct", sku: "GUM-BERRY-30", price: 34.0, inventory: { quantity: 60, policy: "deny", lowStockThreshold: 8, trackInventory: true } }],
+      variants: [{ id: "v-gum", title: "30 ct", sku: "GUM-BERRY-30", price: 34.0, inventory: { quantity: 60, policy: "deny", lowStockThreshold: 8, trackInventory: true } }],
       options: [],
     },
     {
@@ -85,7 +85,7 @@ async function main() {
       description: "<p>Targeted relief balm with menthol and arnica. 2oz.</p>",
       tags: ["topical"], attributes: [{ name: "CBD", value: "500mg" }],
       images: [IMG("cld-sample-3")],
-      variants: [{ id: "v-1", title: "2oz", sku: "BALM-500", price: 28.5, inventory: { quantity: 18, policy: "deny", lowStockThreshold: 5, trackInventory: true } }],
+      variants: [{ id: "v-balm", title: "2oz", sku: "BALM-500", price: 28.5, inventory: { quantity: 18, policy: "deny", lowStockThreshold: 5, trackInventory: true } }],
       options: [],
     },
     {
@@ -93,7 +93,7 @@ async function main() {
       description: "<p>Nightly softgels blending CBN and CBD with melatonin. 30 count.</p>",
       tags: ["sleep", "new"], attributes: [{ name: "CBD", value: "15mg" }, { name: "CBN", value: "5mg" }],
       images: [IMG("cld-sample-2")],
-      variants: [{ id: "v-1", title: "30 ct", sku: "SLEEP-30", price: 44.99, inventory: { quantity: 30, policy: "deny", lowStockThreshold: 6, trackInventory: true } }],
+      variants: [{ id: "v-sleep", title: "30 ct", sku: "SLEEP-30", price: 44.99, inventory: { quantity: 30, policy: "deny", lowStockThreshold: 6, trackInventory: true } }],
       options: [],
     },
     {
@@ -101,7 +101,7 @@ async function main() {
       description: "<p>Broad-spectrum CBD with L-theanine and B-vitamins for calm focus. 30 count.</p>",
       tags: ["focus", "bestseller"], attributes: [{ name: "CBD", value: "20mg" }],
       images: [IMG("cld-sample")],
-      variants: [{ id: "v-1", title: "30 ct", sku: "FOCUS-30", price: 39.0, inventory: { quantity: 22, policy: "deny", lowStockThreshold: 5, trackInventory: true } }],
+      variants: [{ id: "v-focus", title: "30 ct", sku: "FOCUS-30", price: 39.0, inventory: { quantity: 22, policy: "deny", lowStockThreshold: 5, trackInventory: true } }],
       options: [],
     },
     {
@@ -109,7 +109,7 @@ async function main() {
       description: "<p>Bacon-flavored CBD oil formulated for dogs and cats. 15ml.</p>",
       tags: ["pets"], attributes: [{ name: "CBD", value: "250mg" }],
       images: [IMG("cld-sample-5")],
-      variants: [{ id: "v-1", title: "15ml", sku: "PET-250", price: 32.0, inventory: { quantity: 12, policy: "deny", lowStockThreshold: 4, trackInventory: true } }],
+      variants: [{ id: "v-pet", title: "15ml", sku: "PET-250", price: 32.0, inventory: { quantity: 12, policy: "deny", lowStockThreshold: 4, trackInventory: true } }],
       options: [],
     },
   ];
@@ -126,7 +126,7 @@ async function main() {
   // one draft product, to show draft vs active
   await createProduct(storeId, {
     title: "Limited Reserve Tincture (coming soon)", description: "<p>Launching next month.</p>", images: [], status: "draft",
-    handle: "limited-reserve", seo: {}, options: [], variants: [{ id: "v-1", title: "Default", sku: "LTD", price: 89, inventory: { quantity: 0, policy: "deny", lowStockThreshold: 1, trackInventory: true } }] as never,
+    handle: "limited-reserve", seo: {}, options: [], variants: [{ id: "v-ltd", title: "Default", sku: "LTD", price: 89, inventory: { quantity: 0, policy: "deny", lowStockThreshold: 1, trackInventory: true } }] as never,
   });
   console.log(`✓ added ${created.length} active products + 1 draft`);
 
