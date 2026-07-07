@@ -23,6 +23,8 @@ import {
   logoutAccount,
   saveAddress,
   deleteAddress,
+  requestLoginCode,
+  verifyLoginCodeAction,
   type AccountCartLine,
 } from "@/app/(store)/account/actions";
 
@@ -87,12 +89,10 @@ export function AccountView({
 function AuthPanel() {
   const sf = useStorefront();
   const router = useRouter();
-  const [tab, setTab] = useState<"login" | "register">("login");
+  // "code" = passwordless (Shopify's default); "password" = classic email+password.
+  const [mode, setMode] = useState<"code" | "password">("code");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // The anonymous cart to merge into the account on sign-in.
   const cartItems = (sf?.cart ?? []).map((l) => ({
@@ -118,26 +118,9 @@ function AuthPanel() {
     );
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const res =
-        tab === "login"
-          ? await loginAccount({ email: form.email, password: form.password, cart: cartItems })
-          : await registerAccount({
-              name: form.name,
-              email: form.email,
-              password: form.password,
-              cart: cartItems,
-            });
-      if (!res.ok) {
-        setError(res.error ?? "Something went wrong. Please try again.");
-        return;
-      }
-      if (res.cart) adopt(res.cart);
-      router.refresh();
-    });
+  function onSignedIn(cart?: AccountCartLine[]) {
+    if (cart) adopt(cart);
+    router.refresh();
   }
 
   return (
@@ -145,15 +128,201 @@ function AuthPanel() {
       className="store-container"
       style={{ maxWidth: 440, paddingTop: "var(--space-16)", paddingBottom: "var(--space-16)" }}
     >
-      <h1 style={{ ...sectionTitle, fontSize: "var(--text-2xl)", marginBottom: 6 }}>
-        {tab === "login" ? "Sign in" : "Create account"}
-      </h1>
+      <h1 style={{ ...sectionTitle, fontSize: "var(--text-2xl)", marginBottom: 6 }}>Sign in</h1>
       <p style={{ color: "var(--warm-600)", fontSize: "var(--text-base)", marginBottom: 24 }}>
-        {tab === "login"
-          ? "Access your orders and saved addresses."
-          : "Save your details for faster checkout."}
+        Access your orders and saved addresses.
       </p>
 
+      {mode === "code" ? (
+        <CodeAuth
+          cartItems={cartItems}
+          error={error}
+          setError={setError}
+          pending={pending}
+          startTransition={startTransition}
+          onSignedIn={onSignedIn}
+          onUsePassword={() => {
+            setMode("password");
+            setError(null);
+          }}
+        />
+      ) : (
+        <PasswordAuth
+          cartItems={cartItems}
+          error={error}
+          setError={setError}
+          pending={pending}
+          startTransition={startTransition}
+          onSignedIn={onSignedIn}
+          onUseCode={() => {
+            setMode("code");
+            setError(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+type AuthCartItem = { productId: string; variantId: string; quantity: number; priceSnapshot: number };
+interface AuthSubProps {
+  cartItems: AuthCartItem[];
+  error: string | null;
+  setError: (e: string | null) => void;
+  pending: boolean;
+  startTransition: (cb: () => void) => void;
+  onSignedIn: (cart?: AccountCartLine[]) => void;
+}
+
+/** Passwordless: email → 6-digit code. Also the "forgot password" recovery path. */
+function CodeAuth({
+  cartItems,
+  error,
+  setError,
+  pending,
+  startTransition,
+  onSignedIn,
+  onUsePassword,
+}: AuthSubProps & { onUsePassword: () => void }) {
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [resent, setResent] = useState(false);
+
+  function requestCode(e?: React.FormEvent) {
+    e?.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const res = await requestLoginCode(email);
+      if (!res.ok) {
+        setError(res.error ?? "Couldn't send a code. Please try again.");
+        return;
+      }
+      setStep("code");
+    });
+  }
+
+  function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const res = await verifyLoginCodeAction({ email, code, cart: cartItems });
+      if (!res.ok) {
+        setError(res.error ?? "That code isn't right.");
+        return;
+      }
+      onSignedIn(res.cart);
+    });
+  }
+
+  if (step === "email") {
+    return (
+      <form onSubmit={requestCode} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Field label="Email" help="We'll email you a 6-digit sign-in code — no password needed.">
+          <Input
+            type="email"
+            large
+            required
+            autoComplete="email"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
+        <Button type="submit" variant="primary" size="lg" pill block loading={pending}>
+          Email me a code
+        </Button>
+        {error && <AuthError message={error} />}
+        <button type="button" onClick={onUsePassword} style={authLinkStyle}>
+          Use a password instead
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={verify} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <p style={{ fontSize: "var(--text-sm)", color: "var(--warm-700)", margin: 0 }}>
+        We sent a 6-digit code to <strong>{email}</strong>. Enter it below.
+      </p>
+      <Field label="Sign-in code">
+        <Input
+          large
+          required
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          placeholder="123456"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+          style={{ letterSpacing: "0.3em", fontVariantNumeric: "tabular-nums" }}
+        />
+      </Field>
+      <Button type="submit" variant="primary" size="lg" pill block loading={pending}>
+        Sign in
+      </Button>
+      {error && <AuthError message={error} />}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <button
+          type="button"
+          onClick={() => {
+            setStep("email");
+            setCode("");
+            setError(null);
+          }}
+          style={authLinkStyle}
+        >
+          Use a different email
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setResent(true);
+            requestCode();
+          }}
+          disabled={pending}
+          style={authLinkStyle}
+        >
+          {resent ? "Code re-sent" : "Resend code"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Classic email + password (sign in / register), kept as a secondary option. */
+function PasswordAuth({
+  cartItems,
+  error,
+  setError,
+  pending,
+  startTransition,
+  onSignedIn,
+  onUseCode,
+}: AuthSubProps & { onUseCode: () => void }) {
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const res =
+        tab === "login"
+          ? await loginAccount({ email: form.email, password: form.password, cart: cartItems })
+          : await registerAccount({ name: form.name, email: form.email, password: form.password, cart: cartItems });
+      if (!res.ok) {
+        setError(res.error ?? "Something went wrong. Please try again.");
+        return;
+      }
+      onSignedIn(res.cart);
+    });
+  }
+
+  return (
+    <>
       <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
         {(["login", "register"] as const).map((t) => (
           <button
@@ -187,14 +356,7 @@ function AuthPanel() {
           </Field>
         )}
         <Field label="Email">
-          <Input
-            type="email"
-            large
-            required
-            autoComplete="email"
-            value={form.email}
-            onChange={set("email")}
-          />
+          <Input type="email" large required autoComplete="email" value={form.email} onChange={set("email")} />
         </Field>
         <Field label="Password" help={tab === "register" ? "At least 8 characters." : undefined}>
           <Input
@@ -209,13 +371,32 @@ function AuthPanel() {
         <Button type="submit" variant="primary" size="lg" pill block loading={pending}>
           {tab === "login" ? "Sign in" : "Create account"}
         </Button>
-        {error && (
-          <p role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--critical)", textAlign: "center" }}>
-            {error}
-          </p>
-        )}
+        {error && <AuthError message={error} />}
+        <button type="button" onClick={onUseCode} style={authLinkStyle}>
+          {tab === "login" ? "Forgot your password? Email me a code instead" : "Sign in with an email code instead"}
+        </button>
       </form>
-    </div>
+    </>
+  );
+}
+
+const authLinkStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  font: "inherit",
+  fontSize: "var(--text-sm)",
+  color: "var(--warm-700)",
+  textDecoration: "underline",
+  cursor: "pointer",
+  textAlign: "center",
+};
+
+function AuthError({ message }: { message: string }) {
+  return (
+    <p role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--critical)", textAlign: "center" }}>
+      {message}
+    </p>
   );
 }
 

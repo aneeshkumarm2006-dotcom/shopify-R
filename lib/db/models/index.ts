@@ -40,3 +40,4 @@ export {
 } from "./platform";
 export { CounterModel, type CounterDoc } from "./counter";
 export { RateLimitModel } from "./rate-limit";
+export { LoginCodeModel } from "./login-code";

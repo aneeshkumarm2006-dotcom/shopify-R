@@ -15,6 +15,9 @@ import {
   customerCartKey,
   recordError,
   CustomerAuthError,
+  findOrCreateCustomer,
+  issueLoginCode,
+  verifyLoginCode,
 } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import {
@@ -149,6 +152,88 @@ export async function loginAccount(input: {
   }
   const customer = await authenticateCustomer(store._id, input.email, input.password);
   if (!customer) return { ok: false, error: "Incorrect email or password." };
+  await setCustomerSession(customer._id, store._id);
+  const cart = await mergeAndBuildCart(store._id, customer._id, input.cart ?? []);
+  return { ok: true, customer: toPublicCustomer(customer), cart };
+}
+
+/* ============================================================
+   Passwordless sign-in (Shopify's current customer-accounts model): request a
+   6-digit code by email, then verify it. This is BOTH the primary sign-in path and
+   the account-recovery path — a shopper who forgot their password just uses the code
+   instead, which is exactly why Shopify dropped passwords. A code sign-in creates the
+   customer record on first use (like checkout does), so no separate registration.
+   ============================================================ */
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * Send a one-time sign-in code to `email`. Always returns `{ ok: true }` for a
+ * well-formed email (never reveals whether an account exists) — the code is only
+ * useful to whoever controls the inbox. No-ops the email send when Resend is
+ * unconfigured, but still stores the code (so local/dev flows can verify it).
+ */
+export async function requestLoginCode(email: string): Promise<{ ok: boolean; error?: string }> {
+  const store = await resolveStorefront();
+  if (!store) return { ok: false, error: "This store isn't available right now." };
+  const clean = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(clean)) return { ok: false, error: "Enter a valid email address." };
+  if (!(await allowStorefrontAuth(`lcode:${store._id}`, 6, 900))) {
+    return { ok: false, error: "Too many code requests. Please wait a few minutes." };
+  }
+  try {
+    const code = await issueLoginCode(store._id, clean);
+    if (code) {
+      const { isEmailConfigured, sendEmail, renderLoginCodeEmail } = await import("@/lib/email");
+      if (isEmailConfigured()) {
+        const mail = renderLoginCodeEmail({ storeName: store.name, code, minutes: 10 });
+        await sendEmail({
+          to: clean,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
+          fromName: store.name,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    await recordError({
+      source: "account.login_code",
+      message: err instanceof Error ? err.message : "login code issue failed",
+      stack: err instanceof Error ? err.stack : null,
+      severity: "error",
+      storeId: store._id,
+    });
+    // Still return ok so we never leak an internal failure as an enumeration signal.
+  }
+  return { ok: true };
+}
+
+/** Verify a sign-in code, signing the shopper in (creating the account on first use). */
+export async function verifyLoginCodeAction(input: {
+  email: string;
+  code: string;
+  cart?: CartItem[];
+}): Promise<AccountAuthResult> {
+  const store = await resolveStorefront();
+  if (!store) return { ok: false, error: "This store isn't available right now." };
+  if (!(await allowStorefrontAuth(`lverify:${store._id}`, 20, 900))) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
+  const clean = input.email.trim().toLowerCase();
+  const result = await verifyLoginCode(store._id, clean, input.code);
+  if (!result.ok) {
+    const msg =
+      result.reason === "expired"
+        ? "That code has expired — request a new one."
+        : result.reason === "too_many"
+          ? "Too many wrong tries — request a new code."
+          : "That code isn't right. Check it and try again.";
+    return { ok: false, error: msg };
+  }
+  // Verified — find or create the customer (passwordless account) and sign them in.
+  const nameGuess = clean.split("@")[0] || "there";
+  const customer = await findOrCreateCustomer(store._id, { email: clean, name: nameGuess });
   await setCustomerSession(customer._id, store._id);
   const cart = await mergeAndBuildCart(store._id, customer._id, input.cart ?? []);
   return { ok: true, customer: toPublicCustomer(customer), cart };

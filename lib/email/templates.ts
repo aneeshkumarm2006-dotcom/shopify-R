@@ -56,6 +56,32 @@ const NEXT_STEPS = [
   "Age & ID verified at the door (21+)",
 ];
 
+/**
+ * Passwordless sign-in code email. A calm, single-purpose transactional message: the
+ * store name, a big monospaced 6-digit code, and an expiry note. Same inline-style /
+ * literal-hex constraints as the order email (see the note at the top of this file).
+ */
+export function renderLoginCodeEmail(data: {
+  storeName: string;
+  code: string;
+  minutes: number;
+}): RenderedEmail {
+  const { storeName, code, minutes } = data;
+  const subject = `Your ${storeName} sign-in code: ${code}`;
+  const html = `<!doctype html><html><body style="margin:0;background:${C.pageBg};font-family:${FONT};color:${C.body};">
+  <div style="max-width:440px;margin:0 auto;padding:32px 24px;">
+    <div style="background:${C.surface};border:1px solid ${C.border};border-radius:14px;padding:32px 28px;text-align:center;">
+      <div style="font-size:13px;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};margin-bottom:18px;">${esc(storeName)}</div>
+      <h1 style="margin:0 0 8px;font-size:20px;color:${C.ink};">Your sign-in code</h1>
+      <p style="margin:0 0 22px;font-size:14px;color:${C.muted};">Enter this code to sign in. It expires in ${minutes} minutes.</p>
+      <div style="font-family:${MONO};font-size:34px;font-weight:700;letter-spacing:0.32em;color:${C.ink};background:${C.tint};border:1px solid ${C.tintBorder};border-radius:10px;padding:16px 12px 16px 20px;">${esc(code)}</div>
+      <p style="margin:22px 0 0;font-size:12px;color:${C.muted};">Didn't request this? You can safely ignore this email — no one can sign in without the code.</p>
+    </div>
+  </div></body></html>`;
+  const text = `${storeName} — your sign-in code is ${code}. It expires in ${minutes} minutes. If you didn't request this, ignore this email.`;
+  return { subject, html, text };
+}
+
 export function renderOrderConfirmationEmail(data: OrderConfirmationData): RenderedEmail {
   const { store, order } = data;
   const currency = store.settings.currency || "$";
