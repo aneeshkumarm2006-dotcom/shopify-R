@@ -34,6 +34,17 @@ const DEVICE_WIDTH: Record<DeviceMode, number | null> = {
   mobile: 390,
 };
 
+/** Empty-canvas copy per template — names what the template actually affects live,
+ * since (unlike Home) Product/Collection/Page/Cart sections render on every page of
+ * that kind rather than a single dedicated route. */
+const EMPTY_TEMPLATE_HINT: Record<TemplateKey, string> = {
+  home: "This template has no sections yet.",
+  product: "No extra sections yet — anything added here appears below the buy box on every product page.",
+  collection: "No extra sections yet — anything added here appears below the product grid on every collection page.",
+  page: "No extra sections yet — this content template is shared by every content page (About, Contact, FAQ, …).",
+  cart: "This template has no sections yet.",
+};
+
 /**
  * Store builder (Stage 4 · DESIGN §4.9) — the section/block editor. Three panels:
  * the structure tree (left), the live `StoreRenderer` preview (center, the SAME
@@ -298,7 +309,42 @@ function BuilderInner({
     setTemplate(t);
     setSelectedId(null);
     setPanelOpen(false);
+    setNavigateNotice(null);
   }, []);
+
+  /**
+   * Resolve a clicked link's href to the template that edits it. The data model has
+   * one shared template per KIND of page (every collection shares "collection", every
+   * product shares "product") rather than Shopify's per-resource JSON templates, so
+   * this jumps to the right kind rather than a specific instance — still the same
+   * "click a link, land on what you'd edit for that page" behavior the live preview
+   * is missing today.
+   */
+  const resolveNavigateTemplate = useCallback((href: string): TemplateKey | null => {
+    const path = href.split("?")[0]?.split("#")[0] ?? href;
+    if (path.startsWith("/collections")) return "collection";
+    if (path.startsWith("/products")) return "product";
+    if (path.startsWith("/pages")) return "page";
+    if (path.startsWith("/cart")) return "cart";
+    if (path === "/" || path === "") return "home";
+    return null; // unrecognized (e.g. /search, /account, an external URL) — no-op
+  }, []);
+
+  const [navigateNotice, setNavigateNotice] = useState<string | null>(null);
+  const handleNavigate = useCallback(
+    (href: string) => {
+      const t = resolveNavigateTemplate(href);
+      if (!t) return;
+      switchTemplate(t);
+      setNavigateNotice(href);
+    },
+    [resolveNavigateTemplate, switchTemplate],
+  );
+  useEffect(() => {
+    if (!navigateNotice) return;
+    const t = setTimeout(() => setNavigateNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [navigateNotice]);
 
   /* ------------------------------- preview config (drops hidden sections) --- */
   const previewConfig: ThemeConfig = useMemo(() => {
@@ -412,6 +458,16 @@ function BuilderInner({
 
         {/* CENTER — live preview via the shared StoreRenderer */}
         <main className="bld-canvas" data-device={device}>
+          {navigateNotice && (
+            <div className="bld-nav-notice" role="status">
+              <Icon name="arrowRight" size={13} aria-hidden />
+              Jumped to the <strong>{TEMPLATE_LABELS[template]}</strong> template — sections here apply to
+              every {template === "collection" ? "collection" : template === "product" ? "product" : template} page.
+              <button type="button" onClick={() => setNavigateNotice(null)} aria-label="Dismiss">
+                <Icon name="x" size={13} aria-hidden />
+              </button>
+            </div>
+          )}
           <div
             className="bld-frame"
             data-framed={frameWidth != null || undefined}
@@ -427,11 +483,12 @@ function BuilderInner({
               storeName={storeName}
               selectedSectionId={selectedId}
               onSelectSection={selectSection}
+              onNavigate={handleNavigate}
             />
             {orderedSections.length === 0 && (
               <div className="bld-canvas-empty">
                 <Icon name="layout" size={28} aria-hidden />
-                <p>This template has no sections yet.</p>
+                <p>{EMPTY_TEMPLATE_HINT[template]}</p>
                 <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}>
                   <Icon name="plus" size={14} aria-hidden />
                   Add your first section

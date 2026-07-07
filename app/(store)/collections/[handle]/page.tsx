@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getCollection, getCollectionProducts, getThemeConfig } from "@/lib/data";
+import { getCollection, getCollectionProducts, getThemeConfig, getProducts } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { buildStoreMetadata } from "@/lib/seo";
 import { CollectionView, StoreFrame } from "@/components/storefront";
+import { StoreRenderer } from "@/components/sections";
 
 /**
  * Collection listing page (DESIGN §5.4). Resolves the tenant by subdomain (Stage 8),
@@ -44,9 +45,26 @@ export default async function StoreCollectionPage({
   // customers (Stage 8 enforces draft/live gating store-wide).
   const visible = products.filter((p) => p.status === "active");
 
+  // Merchant-added "Collection" template sections (Stage 4 builder) render below the
+  // product grid on every collection page — only fetch the wider active catalog when
+  // there's actually a product-bearing section to resolve against.
+  const hasCollectionSections = (config.templates.collection?.sectionOrder?.length ?? 0) > 0;
+  const catalog = hasCollectionSections ? await getProducts(storeId, { status: "active" }) : [];
+
   return (
     <StoreFrame config={config} storeName={store.name}>
       <CollectionView collection={collection} products={visible} currency={store.settings.currency} />
+      {hasCollectionSections && (
+        <StoreRenderer
+          storeId={storeId}
+          config={config}
+          template="collection"
+          products={catalog}
+          currency={store.settings.currency}
+          storeName={store.name}
+          chrome={false}
+        />
+      )}
     </StoreFrame>
   );
 }

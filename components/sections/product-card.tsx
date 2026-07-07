@@ -24,10 +24,13 @@ export function ProductCard({
   product,
   currency = "$",
   preview = false,
+  onNavigate,
 }: {
   product: Product;
   currency?: string;
   preview?: boolean;
+  /** Builder-only: jump the preview to this product's real page instead of navigating away. */
+  onNavigate?: (href: string) => void;
 }) {
   const sf = useStorefront();
   const href = useStoreHref();
@@ -38,6 +41,7 @@ export function ProductCard({
   const [added, setAdded] = useState(false);
   const add = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // don't also trigger the card's own click (navigate/select)
     if (soldOut) return;
     const v = defaultVariant(product);
     if (v && sf) {
@@ -112,7 +116,24 @@ export function ProductCard({
 
   const style: React.CSSProperties = { display: "block", color: "inherit" };
 
-  if (preview) return <div className="product-card" style={style}>{card}</div>;
+  if (preview) {
+    // In the builder, clicking a product card jumps the preview to that product's
+    // real page (matching the live storefront's link) instead of doing nothing.
+    return (
+      <div
+        className="product-card"
+        role={onNavigate ? "button" : undefined}
+        tabIndex={onNavigate ? 0 : undefined}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNavigate?.(`/products/${product.handle}`);
+        }}
+        style={{ ...style, cursor: onNavigate ? "pointer" : "default" }}
+      >
+        {card}
+      </div>
+    );
+  }
   return (
     <Link className="product-card" href={href(`/products/${product.handle}`)} style={style}>
       {card}

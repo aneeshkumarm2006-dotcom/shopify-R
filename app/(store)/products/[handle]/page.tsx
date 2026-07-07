@@ -6,10 +6,12 @@ import {
   getProductReviews,
   getRatingSummary,
   getRelatedProducts,
+  getProducts,
 } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { buildStoreMetadata } from "@/lib/seo";
 import { ProductView, StoreFrame } from "@/components/storefront";
+import { StoreRenderer } from "@/components/sections";
 
 /**
  * Product detail page (DESIGN §5.4). Resolves the tenant by subdomain (Stage 8), then
@@ -54,10 +56,15 @@ export default async function StoreProductPage({
   if (!config || !product || product.status !== "active") notFound();
 
   // Reviews + related rail (Phase 4) — fetched in parallel after the product resolves.
-  const [reviews, ratingSummary, related] = await Promise.all([
+  // Merchant-added "Product" template sections (Stage 4 builder) render below the buy
+  // box on every product page — only fetch the wider active catalog when there's
+  // actually a product-bearing section to resolve against.
+  const hasProductSections = (config.templates.product?.sectionOrder?.length ?? 0) > 0;
+  const [reviews, ratingSummary, related, catalog] = await Promise.all([
     getProductReviews(storeId, product._id),
     getRatingSummary(storeId, product._id),
     getRelatedProducts(storeId, product, 4),
+    hasProductSections ? getProducts(storeId, { status: "active" }) : Promise.resolve([]),
   ]);
 
   return (
@@ -69,6 +76,17 @@ export default async function StoreProductPage({
         ratingSummary={ratingSummary}
         related={related}
       />
+      {hasProductSections && (
+        <StoreRenderer
+          storeId={storeId}
+          config={config}
+          template="product"
+          products={catalog}
+          currency={store.settings.currency}
+          storeName={store.name}
+          chrome={false}
+        />
+      )}
     </StoreFrame>
   );
 }

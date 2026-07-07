@@ -52,6 +52,15 @@ export interface StoreRendererProps {
   // --- builder preview hooks (Stage 4) ---
   selectedSectionId?: string | null;
   onSelectSection?: (id: string) => void;
+  /**
+   * Builder-only: called with the href a real link inside the preview would have
+   * navigated to (a nav item, a CTA, a collection tile, a product card). The builder
+   * resolves this to a template and jumps there — clicking "Tinctures" in the preview
+   * now behaves like Shopify's editor, where clicking a link in the live preview
+   * navigates to that real page and the structure panel updates to match. Absent/
+   * no-op on the live storefront, where these elements are real navigable links.
+   */
+  onNavigate?: (href: string) => void;
 }
 
 export function StoreRenderer({
@@ -65,6 +74,7 @@ export function StoreRenderer({
   chrome = true,
   selectedSectionId,
   onSelectSection,
+  onNavigate,
 }: StoreRendererProps) {
   const preview = mode === "preview";
   const tpl = config.templates[template];
@@ -107,9 +117,9 @@ export function StoreRenderer({
     );
   };
 
-  const header = <StoreHeader section={config.header} preview={preview} />;
+  const header = <StoreHeader section={config.header} preview={preview} onNavigate={onNavigate} />;
   const footer = (
-    <StoreFooter section={config.footer} preview={preview} storeName={storeName} />
+    <StoreFooter section={config.footer} preview={preview} storeName={storeName} onNavigate={onNavigate} />
   );
 
   return (
@@ -127,6 +137,7 @@ export function StoreRenderer({
               products={products}
               currency={currency}
               preview={preview}
+              onNavigate={onNavigate}
             />
           );
           return preview ? selectable(id, node) : <div key={id}>{node}</div>;

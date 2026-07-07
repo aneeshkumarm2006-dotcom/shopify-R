@@ -25,10 +25,12 @@ export interface SectionProps {
   products: Product[];
   currency?: string;
   preview?: boolean;
+  /** Builder-only: resolve+jump to the real page a link/tile/card would navigate to. */
+  onNavigate?: (href: string) => void;
 }
 
 /* ---------------------------------------------------------------- hero ---- */
-export function HeroSection({ section, preview }: SectionProps) {
+export function HeroSection({ section, preview, onNavigate }: SectionProps) {
   const s = section.settings as {
     badge?: string;
     heading?: string;
@@ -148,7 +150,7 @@ export function HeroSection({ section, preview }: SectionProps) {
                 justifyContent: center ? "center" : "flex-start",
               }}
             >
-              <CtaButton href={s.ctaHref} preview={preview} primary>
+              <CtaButton href={s.ctaHref} preview={preview} onNavigate={onNavigate} primary>
                 {cta}
               </CtaButton>
             </div>
@@ -160,7 +162,7 @@ export function HeroSection({ section, preview }: SectionProps) {
 }
 
 /* ------------------------------------------------- featured_products ---- */
-export function FeaturedProductsSection({ section, products, currency, preview }: SectionProps) {
+export function FeaturedProductsSection({ section, products, currency, preview, onNavigate }: SectionProps) {
   const s = section.settings as { title?: string; productIds?: string[]; columns?: number };
   const byId = new Map(products.map((p) => [p._id, p]));
   const picked = (s.productIds ?? [])
@@ -187,7 +189,7 @@ export function FeaturedProductsSection({ section, products, currency, preview }
         ) : (
           <div className="store-grid" style={{ ["--cols" as string]: cols }}>
             {picked.map((p) => (
-              <ProductCard key={p._id} product={p} currency={currency} preview={preview} />
+              <ProductCard key={p._id} product={p} currency={currency} preview={preview} onNavigate={onNavigate} />
             ))}
           </div>
         )}
@@ -197,7 +199,7 @@ export function FeaturedProductsSection({ section, products, currency, preview }
 }
 
 /* ---------------------------------------------------- collection_list ---- */
-export function CollectionListSection({ section, preview }: SectionProps) {
+export function CollectionListSection({ section, preview, onNavigate }: SectionProps) {
   const s = section.settings as {
     title?: string;
     columns?: number;
@@ -259,6 +261,21 @@ export function CollectionListSection({ section, preview }: SectionProps) {
                 </div>
               </div>
             );
+            if (preview && c.handle) {
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate?.(`/collections/${c.handle}`);
+                  }}
+                  style={{ display: "block", width: "100%", padding: 0, border: "none", background: "none", textAlign: "inherit", cursor: onNavigate ? "pointer" : "default" }}
+                >
+                  {tile}
+                </button>
+              );
+            }
             return preview || !c.handle ? (
               <div key={i}>{tile}</div>
             ) : (
@@ -499,11 +516,13 @@ function CtaButton({
   children,
   primary,
   preview,
+  onNavigate,
 }: {
   href?: string;
   children: React.ReactNode;
   primary?: boolean;
   preview?: boolean;
+  onNavigate?: (href: string) => void;
 }) {
   const toHref = useStoreHref();
   const className = "btn btn-lg btn-pill";
@@ -517,6 +536,23 @@ function CtaButton({
     </>
   );
   if (preview || !href) {
+    // In the builder, a configured href still jumps the preview to that page — it
+    // just never leaves the editor. No href at all stays inert (nothing to jump to).
+    if (preview && href && onNavigate) {
+      return (
+        <button
+          type="button"
+          className={className}
+          style={{ ...style, border: "none", cursor: "pointer" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(href);
+          }}
+        >
+          {content}
+        </button>
+      );
+    }
     return (
       <span className={className} style={{ ...style, cursor: "default" }}>
         {content}

@@ -169,6 +169,42 @@
 .bld-canvas-empty .btn {
   pointer-events: auto;
 }
+.bld-canvas-empty p {
+  max-width: 360px;
+}
+
+/* Transient "jumped to template X" notice after clicking a link in the preview. */
+.bld-nav-notice {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: var(--accent-tint);
+  border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  color: var(--warm-800);
+  font-size: var(--text-xs);
+  animation: fade var(--dur-base) var(--ease-out);
+}
+.bld-nav-notice strong {
+  color: var(--text-strong);
+}
+.bld-nav-notice button {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: var(--warm-600);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+.bld-nav-notice button:hover {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+}
 
 /* ------------------------------------------------- left: structure tree ---- */
 .bld-tree-group {

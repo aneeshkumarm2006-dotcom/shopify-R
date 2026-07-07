@@ -33,9 +33,12 @@ const DEFAULT_PROMO = "Free shipping over $75  ·  Easy 30-day returns  ·  Secu
 export function StoreHeader({
   section,
   preview = false,
+  onNavigate,
 }: {
   section: Section;
   preview?: boolean;
+  /** Builder-only: jump the preview to a real page instead of navigating away. */
+  onNavigate?: (href: string) => void;
 }) {
   const s = section.settings as HeaderSettings;
   const sf = useStorefront();
@@ -95,7 +98,7 @@ export function StoreHeader({
           transition: "height var(--dur-base) var(--ease-standard)",
         }}
       >
-        <LogoLink preview={preview} name={sf?.storeName} />
+        <LogoLink preview={preview} name={sf?.storeName} onNavigate={onNavigate} />
 
         <nav
           aria-label="Primary"
@@ -109,9 +112,25 @@ export function StoreHeader({
         >
           {nav.map((item) =>
             preview ? (
-              <span key={item.label} style={{ fontWeight: 450 }}>
+              <button
+                key={item.label}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate?.(item.href);
+                }}
+                style={{
+                  fontWeight: 450,
+                  font: "inherit",
+                  color: "inherit",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: onNavigate ? "pointer" : "default",
+                }}
+              >
                 {item.label}
-              </span>
+              </button>
             ) : (
               <Link
                 key={item.label}
@@ -273,10 +292,33 @@ function HeaderSearch({ preview }: { preview: boolean }) {
   );
 }
 
-function LogoLink({ preview, name }: { preview: boolean; name?: string }) {
+function LogoLink({
+  preview,
+  name,
+  onNavigate,
+}: {
+  preview: boolean;
+  name?: string;
+  onNavigate?: (href: string) => void;
+}) {
   const href = useStoreHref();
   const logo = <StoreLogo name={name} />;
-  if (preview) return logo;
+  if (preview) {
+    if (!onNavigate) return logo;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onNavigate(STORE_HOME);
+        }}
+        aria-label="Store home"
+        style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+      >
+        {logo}
+      </button>
+    );
+  }
   return (
     <Link href={href(STORE_HOME)} aria-label="Store home">
       {logo}

@@ -28,10 +28,13 @@ export function StoreFooter({
   section,
   preview = false,
   storeName,
+  onNavigate,
 }: {
   section: Section;
   preview?: boolean;
   storeName?: string;
+  /** Builder-only: jump the preview to a real page instead of navigating away. */
+  onNavigate?: (href: string) => void;
 }) {
   const s = section.settings as FooterSettings;
   const sf = useStorefront();
@@ -66,7 +69,25 @@ export function StoreFooter({
 
   const LinkEl = ({ href: to, children }: { href: string; children: string }) =>
     preview ? (
-      <span style={{ fontSize: "var(--text-base)", color: "var(--warm-600)" }}>{children}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onNavigate?.(to);
+        }}
+        style={{
+          fontSize: "var(--text-base)",
+          color: "var(--warm-600)",
+          background: "none",
+          border: "none",
+          padding: 0,
+          textAlign: "left",
+          font: "inherit",
+          cursor: onNavigate ? "pointer" : "default",
+        }}
+      >
+        {children}
+      </button>
     ) : (
       <Link href={href(to)} style={{ fontSize: "var(--text-base)", color: "var(--warm-600)" }}>
         {children}
