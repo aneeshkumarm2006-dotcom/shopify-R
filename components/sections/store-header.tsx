@@ -5,10 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/icon";
 import { IconButton } from "@/components/ui/icon-button";
+import { Sheet } from "@/components/ui/sheet";
+import { Thumb } from "@/components/ui/thumb";
 import type { Section } from "@/types";
+import { money } from "@/lib/format";
 import { StoreLogo } from "@/components/storefront/store-logo";
 import { useStorefront, useStoreHref } from "@/components/storefront/storefront-context";
 import { STORE_HOME } from "@/components/storefront/shared";
+import { searchSuggest, type SearchSuggestion } from "@/app/(store)/actions";
 
 interface NavItem {
   label: string;
@@ -49,6 +53,7 @@ export function StoreHeader({
   const sf = useStorefront();
   const href = useStoreHref();
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (preview) return;
@@ -103,7 +108,21 @@ export function StoreHeader({
           transition: "height var(--dur-base) var(--ease-standard)",
         }}
       >
-        <LogoLink preview={preview} name={sf?.storeName} onNavigate={onNavigate} />
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", minWidth: 0 }}>
+          {!preview && nav.length > 0 && (
+            <button
+              type="button"
+              className="iconbtn sz-36 store-header-menu-btn"
+              aria-label="Open menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+              style={{ color: "var(--warm-800)" }}
+            >
+              <Icon name="menu" size={20} aria-hidden />
+            </button>
+          )}
+          <LogoLink preview={preview} name={sf?.storeName} onNavigate={onNavigate} />
+        </div>
 
         <nav
           aria-label="Primary"
@@ -220,6 +239,50 @@ export function StoreHeader({
           )}
         </div>
       </div>
+
+      {!preview && (
+        <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Menu" width={360}>
+          <nav aria-label="Mobile" style={{ display: "flex", flexDirection: "column" }}>
+            {nav.map((item) => (
+              <Link
+                key={item.label}
+                href={href(item.href)}
+                onClick={() => setMenuOpen(false)}
+                style={{
+                  padding: "14px 4px",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: "var(--text-lg)",
+                  fontWeight: 500,
+                  color: "var(--warm-900)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                {item.label}
+                <Icon name="chevronRight" size={18} aria-hidden style={{ color: "var(--warm-400)" }} />
+              </Link>
+            ))}
+            <Link
+              href={href("/account")}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                marginTop: "var(--space-4)",
+                padding: "14px 4px",
+                fontSize: "var(--text-base)",
+                fontWeight: 500,
+                color: "var(--warm-700)",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Icon name="user" size={18} aria-hidden />
+              {sf?.customer ? sf.customer.name : "Sign in"}
+            </Link>
+          </nav>
+        </Sheet>
+      )}
     </header>
   );
 }
@@ -233,12 +296,53 @@ export function StoreHeader({
 function HeaderSearch({ preview }: { preview: boolean }) {
   const href = useStoreHref();
   const router = useRouter();
+  const currency = useStorefront()?.currency ?? "$";
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
+  const [results, setResults] = useState<SearchSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
+  }, [open]);
+
+  // Predictive results: debounce the query, then fetch the tenant's top matches.
+  // A ref-guarded "latest" token drops out-of-order responses so fast typing can't
+  // flash a stale result set.
+  const q = value.trim();
+  const reqRef = useRef(0);
+  useEffect(() => {
+    if (!open) return;
+    if (q.length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const token = ++reqRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const hits = await searchSuggest(q);
+        if (token === reqRef.current) setResults(hits);
+      } catch {
+        if (token === reqRef.current) setResults([]);
+      } finally {
+        if (token === reqRef.current) setLoading(false);
+      }
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q, open]);
+
+  // Close the dropdown on outside click / Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
   if (preview) {
@@ -257,67 +361,152 @@ function HeaderSearch({ preview }: { preview: boolean }) {
     );
   }
 
+  const go = (path: string) => {
+    setOpen(false);
+    setValue("");
+    router.push(href(path));
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const q = value.trim();
-    setOpen(false);
-    router.push(href(`/search${q ? `?q=${encodeURIComponent(q)}` : ""}`));
+    go(`/search${q ? `?q=${encodeURIComponent(q)}` : ""}`);
   };
 
   return (
-    <form
-      role="search"
-      onSubmit={submit}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        border: "1px solid var(--border-strong)",
-        borderRadius: 999,
-        padding: "2px 4px 2px 12px",
-        background: "var(--surface)",
-      }}
-    >
-      <label
-        htmlFor="store-search"
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <form
+        role="search"
+        onSubmit={submit}
         style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          overflow: "hidden",
-          clip: "rect(0 0 0 0)",
-          whiteSpace: "nowrap",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          border: "1px solid var(--border-strong)",
+          borderRadius: 999,
+          padding: "2px 4px 2px 12px",
+          background: "var(--surface)",
         }}
       >
-        Search products
-      </label>
-      <input
-        id="store-search"
-        ref={inputRef}
-        type="search"
-        name="q"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          if (!value.trim()) setOpen(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
-        }}
-        placeholder="Search products"
-        autoComplete="off"
-        style={{
-          border: "none",
-          outline: "none",
-          background: "transparent",
-          fontSize: "var(--text-sm)",
-          color: "var(--warm-900)",
-          // 160px on wide screens, shrinks on narrow viewports so the header right cluster fits
-          width: "min(160px, 38vw)",
-        }}
-      />
-      <IconButton name="search" size={28} aria-label="Submit search" type="submit" />
-    </form>
+        <label htmlFor="store-search" className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>
+          Search products
+        </label>
+        <input
+          id="store-search"
+          ref={inputRef}
+          type="search"
+          name="q"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+          }}
+          placeholder="Search products"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={q.length >= 2}
+          aria-controls="store-search-results"
+          style={{
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            fontSize: "var(--text-sm)",
+            color: "var(--warm-900)",
+            width: "min(200px, 44vw)",
+          }}
+        />
+        <IconButton name="search" size={28} aria-label="Submit search" type="submit" />
+      </form>
+
+      {q.length >= 2 && (
+        <div
+          id="store-search-results"
+          role="listbox"
+          className="predictive-search-panel"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            width: "min(380px, 92vw)",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg, 0 12px 32px rgba(0,0,0,0.14))",
+            overflow: "hidden",
+            zIndex: 200,
+          }}
+        >
+          {loading && results.length === 0 ? (
+            <p style={{ margin: 0, padding: "16px 14px", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+              Searching…
+            </p>
+          ) : results.length === 0 ? (
+            <p style={{ margin: 0, padding: "16px 14px", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+              No matches for &ldquo;{q}&rdquo;
+            </p>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 4 }}>
+              {results.map((r) => (
+                <li key={r.handle}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    onClick={() => go(`/products/${r.handle}`)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      width: "100%",
+                      padding: "8px 10px",
+                      border: "none",
+                      background: "none",
+                      borderRadius: "var(--radius-md)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                    className="predictive-search-row"
+                  >
+                    <Thumb src={r.image} ratio="4 / 5" size={42} radius="var(--radius-sm)" />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: "var(--text-sm)", fontWeight: 500, color: "var(--text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.title}
+                      </span>
+                      {r.productType && (
+                        <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                          {r.productType}
+                        </span>
+                      )}
+                    </span>
+                    <span className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--text-strong)" }}>
+                      {money(r.price, currency)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={submit}
+            style={{
+              display: "block",
+              width: "100%",
+              padding: "11px 14px",
+              border: "none",
+              borderTop: "1px solid var(--border)",
+              background: "none",
+              fontSize: "var(--text-sm)",
+              fontWeight: 500,
+              color: "var(--warm-800)",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            Search for &ldquo;{q}&rdquo; →
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

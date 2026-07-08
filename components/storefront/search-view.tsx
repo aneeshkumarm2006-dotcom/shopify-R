@@ -1,5 +1,6 @@
 import type { Product } from "@/types";
-import { ProductGrid } from "./product-grid";
+import { CollectionFilterBar } from "./collection-filter-bar";
+import { Breadcrumbs } from "./breadcrumbs";
 import { EmptyState } from "@/components/ui/states";
 
 /**
@@ -23,8 +24,9 @@ export function SearchView({
   return (
     <div
       className="store-container"
-      style={{ paddingTop: "var(--space-12)", paddingBottom: "var(--space-12)" }}
+      style={{ paddingTop: "var(--space-10)", paddingBottom: "var(--space-12)" }}
     >
+      <Breadcrumbs items={[{ label: trimmed ? `Search: ${trimmed}` : "Search" }]} />
       <header style={{ marginBottom: "var(--space-10)" }}>
         <h1
           style={{
@@ -57,7 +59,7 @@ export function SearchView({
           body="Try a different search term or browse the collections."
         />
       ) : (
-        <ProductGrid products={products} currency={currency} />
+        <CollectionFilterBar products={products} currency={currency} />
       )}
     </div>
   );

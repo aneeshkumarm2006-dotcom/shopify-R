@@ -1,15 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Icon } from "@/components/ui/icon";
 import { Stepper } from "@/components/ui/stepper";
 import { Media } from "@/components/sections/media";
 import { ProductGrid } from "./product-grid";
+import { Breadcrumbs } from "./breadcrumbs";
 import type { Product, RatingSummary, Review } from "@/types";
 import { money } from "@/lib/format";
-import { useStorefront, useStoreHref } from "./storefront-context";
-import { STORE_HOME } from "./shared";
+import { useStorefront } from "./storefront-context";
 import { variantStock, productType } from "./shared";
 import { ProductReviews, StarRating } from "./product-reviews";
 
@@ -34,7 +33,6 @@ export function ProductView({
   related?: Product[];
 }) {
   const sf = useStorefront();
-  const href = useStoreHref();
   const [vi, setVi] = useState(() =>
     Math.max(0, product.variants.findIndex((v) => variantStock(v) !== "out")),
   );
@@ -66,14 +64,14 @@ export function ProductView({
 
   return (
     <div className="store-container" style={{ paddingTop: "var(--space-10)", paddingBottom: "var(--space-10)" }}>
-      <Link
-        href={href(STORE_HOME)}
-        className="btn btn-sm btn-ghost"
-        style={{ marginBottom: 24, paddingLeft: 4, color: "var(--warm-600)" }}
-      >
-        <Icon name="chevronLeft" size={16} aria-hidden />
-        <span>Back</span>
-      </Link>
+      <Breadcrumbs
+        items={[
+          ...(product.productType
+            ? [{ label: product.productType, href: `/search?type=${encodeURIComponent(product.productType)}` }]
+            : []),
+          { label: product.title },
+        ]}
+      />
 
       <div className="store-split store-split-product">
         {/* Gallery */}

@@ -38,6 +38,17 @@ export function StoreShell({
   basePath?: string;
   children: ReactNode;
 }) {
+  // Lowest free-shipping threshold the store actually offers — drives the cart's
+  // "you're $X away from free shipping" meter. Only when shipping is enabled and a
+  // rate carries a positive `freeOver`; otherwise null and the meter is hidden.
+  const freeShippingThreshold =
+    store.settings.shipping?.enabled
+      ? store.settings.shipping.rates
+          .map((r) => r.freeOver)
+          .filter((v): v is number => typeof v === "number" && v > 0)
+          .sort((a, b) => a - b)[0] ?? null
+      : null;
+
   return (
     <StorefrontProvider
       storeId={store._id}
@@ -47,6 +58,7 @@ export function StoreShell({
       basePath={basePath ?? storePath(store.subdomain)}
       customer={customer}
       navLinks={navLinks}
+      freeShippingThreshold={freeShippingThreshold}
     >
       <div style={{ minHeight: "100vh", background: "var(--warm-50)", color: "var(--text)" }}>
         {children}
@@ -69,6 +81,8 @@ function GlobalCartSheet() {
       open={sf.cartOpen}
       onClose={sf.closeCart}
       currency={sf.currency}
+      freeShippingThreshold={sf.freeShippingThreshold}
+      subtotal={sf.subtotal}
       items={sf.cart.map((l) => ({
         id: l.key,
         title: l.title,

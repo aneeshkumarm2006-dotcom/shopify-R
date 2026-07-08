@@ -1,6 +1,7 @@
 import type { Collection, Product } from "@/types";
 import { EmptyState } from "@/components/ui/states";
 import { CollectionFilterBar } from "./collection-filter-bar";
+import { Breadcrumbs } from "./breadcrumbs";
 
 /**
  * Collection listing (DESIGN §5.4) — title + a simple product count, then a
@@ -17,7 +18,8 @@ export function CollectionView({
   currency?: string;
 }) {
   return (
-    <div className="store-container" style={{ paddingTop: "var(--space-12)", paddingBottom: "var(--space-12)" }}>
+    <div className="store-container" style={{ paddingTop: "var(--space-10)", paddingBottom: "var(--space-12)" }}>
+      <Breadcrumbs items={[{ label: collection.title }]} />
       <header style={{ marginBottom: "var(--space-10)" }}>
         <h1
           style={{

@@ -13,6 +13,7 @@ import {
   getProductByHandle,
   validateGiftCard,
   applyGiftCard,
+  searchProducts,
 } from "@/lib/data";
 import { resolveStorefront } from "@/lib/tenant/resolve";
 import { getCurrentCustomer } from "@/lib/customer/session";
@@ -230,4 +231,34 @@ export async function syncCart(
   } catch {
     return { ok: false };
   }
+}
+
+/** One predictive-search hit — the minimal shape the header dropdown renders. */
+export interface SearchSuggestion {
+  handle: string;
+  title: string;
+  productType?: string;
+  price: number;
+  image: string | null;
+}
+
+/**
+ * Predictive search for the header dropdown: active-only matches for the tenant
+ * resolved from the request subdomain (never a client-supplied storeId). Returns a
+ * small, render-ready slice (top matches, lowest variant price, first image) so the
+ * client shows instant results as the shopper types without shipping the catalog.
+ */
+export async function searchSuggest(query: string): Promise<SearchSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const store = await resolveStorefront();
+  if (!store) return [];
+  const rows = await searchProducts(store._id, { q, status: "active", sort: "newest" });
+  return rows.slice(0, 6).map((p) => ({
+    handle: p.handle,
+    title: p.title,
+    productType: p.productType,
+    price: p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : 0,
+    image: p.images[0] ?? null,
+  }));
 }

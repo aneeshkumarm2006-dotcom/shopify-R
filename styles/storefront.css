@@ -88,11 +88,30 @@
   }
 }
 
-/* Nav hides on small screens (mobile uses the always-present cart + logo).
-   A full hamburger menu is a Stage 4/8 enhancement; the links remain in the footer. */
+/* The hamburger button is hidden on desktop; the inline nav carries browsing there. */
+.store-header-menu-btn {
+  display: none;
+}
+
+/* Predictive search dropdown rows highlight on hover/focus (pointer devices only). */
+@media (hover: hover) and (pointer: fine) {
+  .predictive-search-row:hover {
+    background: var(--surface-sunken);
+  }
+}
+.predictive-search-row:focus-visible {
+  background: var(--surface-sunken);
+  outline: none;
+}
+
+/* On small screens the inline nav collapses into the hamburger + slide-in Menu sheet
+   (see StoreHeader), so category browsing stays reachable on mobile. */
 @media (max-width: 720px) {
   .store-header-nav {
     display: none !important;
+  }
+  .store-header-menu-btn {
+    display: inline-flex !important;
   }
 }
 

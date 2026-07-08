@@ -66,6 +66,8 @@ interface StorefrontValue {
   storeName: string;
   /** Storefront nav links — the store's collections, so the header always has a menu. */
   navLinks: { label: string; href: string }[];
+  /** Lowest free-shipping threshold offered (drives the cart meter), or null. */
+  freeShippingThreshold: number | null;
   // --- routing ---
   /** Tenant path prefix for customer links, e.g. `/s/northbound` (see middleware). */
   basePath: string;
@@ -153,6 +155,7 @@ export function StorefrontProvider({
   basePath = "",
   customer = null,
   navLinks = [],
+  freeShippingThreshold = null,
   children,
 }: {
   storeId: string;
@@ -162,6 +165,7 @@ export function StorefrontProvider({
   basePath?: string;
   customer?: StorefrontCustomer | null;
   navLinks?: { label: string; href: string }[];
+  freeShippingThreshold?: number | null;
   children: ReactNode;
 }) {
   // Mounted gate avoids SSR/CSR mismatch: server renders unverified + empty cart,
@@ -285,6 +289,7 @@ export function StorefrontProvider({
       currency,
       storeName,
       navLinks,
+      freeShippingThreshold,
       basePath,
     };
   }, [
@@ -303,6 +308,7 @@ export function StorefrontProvider({
     currency,
     storeName,
     navLinks,
+    freeShippingThreshold,
     basePath,
   ]);
 
