@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button, Eyebrow, Icon } from "@/components/ui";
 import type { SubdomainCheck } from "@/lib/data/subdomain";
 import { checkSubdomainAvailability, claimSubdomain } from "@/lib/auth/actions";
@@ -44,7 +43,6 @@ const REASON_COPY: Record<NonNullable<SubdomainCheck["reason"]>, string> = {
 };
 
 export function Onboarding({ suggested = "" }: { suggested?: string }) {
-  const router = useRouter();
   const [step, setStep] = useState<"address" | "template" | "done">("address");
   const [value, setValue] = useState(suggested);
   // The server pre-validated `suggested` as available, so start "ok" (Continue is
@@ -56,11 +54,16 @@ export function Onboarding({ suggested = "" }: { suggested?: string }) {
   const token = useRef(0);
 
   // After the celebratory success step, glide the merchant into their dashboard.
+  // NOTE: this MUST be a full-document navigation, not a soft `router.push`. The
+  // `(admin)` layout was rendered in its bare, no-chrome branch for onboarding
+  // (ctx.ready === false), which omits <ToastProvider>. A soft navigation would reuse
+  // that stale layout, so the dashboard's `useToast()` would throw. A hard navigation
+  // re-runs the layout server-side with ctx.ready === true and mounts the full chrome.
   useEffect(() => {
     if (step !== "done") return;
-    const t = setTimeout(() => router.push("/dashboard"), 2600);
+    const t = setTimeout(() => window.location.assign("/dashboard"), 2600);
     return () => clearTimeout(t);
-  }, [step, router]);
+  }, [step]);
 
   useEffect(() => {
     const v = value.trim();
@@ -154,7 +157,7 @@ export function Onboarding({ suggested = "" }: { suggested?: string }) {
             size="lg"
             block
             iconRight="arrowRight"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => window.location.assign("/dashboard")}
           >
             Go to your dashboard
           </Button>
@@ -433,11 +436,22 @@ function TemplateCard({
   selected: boolean;
   onSelect: () => void;
 }) {
+  // A div with role="button" (not a real <button>): the preview below is a live
+  // StoreRenderer whose sections contain their own <button> elements, and a <button>
+  // cannot legally nest another <button> (invalid HTML → hydration error). role="button"
+  // + keyboard handling keeps the whole card clickable and accessible without the nesting.
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       aria-pressed={selected}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       style={{
         textAlign: "left",
         padding: 0,
@@ -506,7 +520,7 @@ function TemplateCard({
           {description}
         </p>
       </div>
-    </button>
+    </div>
   );
 }
 
